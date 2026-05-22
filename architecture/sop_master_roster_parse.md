@@ -118,6 +118,8 @@ Per `sop_identity_and_join_model.md`:
 | Each row has at least one of `(full_contact_id, sales_rep_id)` | `ingest_errors` of kind `roster_row_no_identity` (warning); row dropped from in-memory roster. |
 | `full_contact_id` (where non-null) is unique | **Hard fail.** |
 | `sales_rep_id` (where non-null) is unique | **Hard fail.** |
+| **Derived volunteer `id` (= `full_contact_id` ?? `"rep_" + sales_rep_id`) is unique across the roster** | **Hard fail** (`FatalRosterError`). Catches the pathological case where one row's `full_contact_id` is literally `"rep_<N>"` and another row has `sales_rep_id = N` with no `full_contact_id` — both would land on the same Supabase PK and silently merge two distinct volunteers' totals. Added 2026-05-22 (Codex F3). |
+| **No row derives the reserved id `"org_uncredited"`** | **Hard fail** (`FatalRosterError`). That id is reserved for the synthetic N=0 bucket (see `sop_multi_rep_split.md`); a roster row claiming it would collide with engine-internal state. |
 | `full_name` is unique | `ingest_errors` of kind `duplicate_full_name`, **WARN ONLY** — ingest continues. |
 | Phone present for `member_type ∈ {Yellow Jacket, Future}` AND `active` | `ingest_errors` of kind `missing_phone`, continue. |
 | `member_type` resolvable from legacy fields | Row-level `ingest_errors`, row dropped. |

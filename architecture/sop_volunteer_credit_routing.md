@@ -142,6 +142,10 @@ Orchestrator (`sop_orchestrator.md`) globs `{TeamMascot}-*.xlsx` from the shared
 ```
 Where `source_file_fingerprint+timestamp` is the export timestamp embedded in the filename. Two ingests of the same export = identical fingerprints = dedup wins. A newer export (different timestamp) supersedes prior batches per `sop_orchestrator.md`.
 
+### Same-timestamp ties for a team (Codex F4, added 2026-05-22)
+
+If two distinct files for the same team mascot carry the SAME latest timestamp but different fingerprints, the engine cannot deterministically pick a winner. `compute_metrics.filterToLatestCreditBatchPerTeam` **drops both batches** for that team and emits a single `ambiguous_credit_batch_timestamp` warning naming the offending files. The team's SF subtotals stay at zero for the run; the operator resolves by deleting one file or amending its filename timestamp. Full detail in `sop_orchestrator.md` § Same-timestamp ties.
+
 ## File-team vs roster-team mismatch (Codex condition b)
 
 For every credit record, after resolving `full_contact_id` → roster row, compare the roster's `team` to the team mascot in the filename.

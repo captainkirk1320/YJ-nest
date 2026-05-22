@@ -65,6 +65,8 @@ ingest_errors (
 | `malformed_exception_block` | `parse_exceptions.ts` | Any per-block validation failure in `sop_exceptions_format.md`. Block skipped; rest of file applies. |
 | `ambiguous_split_exception_match` | `apply_exceptions.ts` | Two+ active SPLITs match the same Unify row. Default even-split used as fallback. |
 | `ambiguous_member_type` | `parse_master_roster.ts` | Roster row's legacy member-type fields don't map to the §4.2 enum. Row dropped from roster. |
+| `unparseable_staff_rep_id` | `parse_staff_directory.ts` | Staff directory row's `Sales Rep ID` won't parse to an integer. Row skipped; rest of allowlist still loads. |
+| `ambiguous_credit_batch_timestamp` | `compute_metrics.ts` (`filterToLatestCreditBatchPerTeam`) | Two distinct credit-export files for the same team share the latest `source_file_timestamp`. The SOP defines no tie-break; engine drops **both** batches for that team to avoid double-counting. Operator triage: delete one file or amend its filename timestamp before re-running. Added 2026-05-22 (Codex F4). |
 
 ### Severity: `warning` (ingest continues with data; flagged for review)
 
@@ -76,6 +78,9 @@ ingest_errors (
 | `duplicate_full_name` | `parse_master_roster.ts` preflight | Two roster rows share a `full_name`. Defense-in-depth flag — name is not a join key but operator should disambiguate. |
 | `missing_phone` | `parse_master_roster.ts` preflight | Active YJ/Future volunteer has no phone. Twilio OTP login will fail. |
 | `file_team_mismatch` | `parse_volunteer_credit.ts` | Credit file's filename mascot ≠ resolved volunteer's roster team. Credit still flows; flagged. |
+| `duplicate_staff_rep_id` | `parse_staff_directory.ts` | Two staff allowlist rows share a `Sales Rep ID`. Last write wins; operator should de-dupe the directory file. |
+| `staff_directory_absent` | `parse_staff_directory.ts` | `Sales Staff Directory.xlsx` not present at the configured path. Engine continues with an empty allowlist; every Unify rep not in the roster will emit `unknown_sales_rep_id` until the file is restored. |
+| `exceptions_file_absent` | `parse_exceptions.ts` | `exceptions.txt` not present. Engine continues with zero exceptions. |
 
 ## Severity: `fatal` (engine refuses to run)
 
@@ -85,16 +90,21 @@ These do NOT write to `ingest_errors`. They abort the ingest cycle with a logged
 
 Fatal conditions:
 
-| Condition | Source |
-|---|---|
-| Master Roster preflight: any row missing `full_contact_id` | `sop_master_roster_parse.md` |
-| Master Roster preflight: duplicate `full_contact_id` | same |
-| Master Roster preflight: duplicate non-null `sales_rep_id` | same |
-| Unify CSV file missing | `sop_unify_csv_ingest.md` |
-| Unify CSV missing one of the 4 required columns | same |
-| Volunteer Credit Export missing `Full Contact ID` column (production files) | `sop_volunteer_credit_routing.md` |
-| Volunteer Credit Export header row 22 not found | same |
-| `exceptions.txt` exists but can't be read | `sop_exceptions_format.md` (note: file absent is OK — engine runs with zero exceptions) |
+| Condition | Source | Thrown |
+|---|---|---|
+| Master Roster preflight: duplicate `full_contact_id` | `sop_master_roster_parse.md` | `FatalRosterError` |
+| Master Roster preflight: duplicate non-null `sales_rep_id` | same | `FatalRosterError` |
+| **Master Roster preflight: synthetic-id collision** (two rows derive the same `volunteers.id` = `full_contact_id ?? "rep_" + sales_rep_id`) | same | `FatalRosterError`. Added 2026-05-22 (Codex F3). Operator must rename one of the colliding rows before re-running. |
+| **Master Roster preflight: roster row derives the reserved id `"org_uncredited"`** | same | `FatalRosterError`. Same provenance as the collision check. |
+| Staff directory: a staff `sales_rep_id` collides with a roster `sales_rep_id` | `sop_staff_directory_parse.md` | `FatalStaffDirectoryError` (`staff_rep_id_collides_with_roster`) |
+| Staff directory file present but first sheet / required headers missing | same | `FatalStaffDirectoryError` (file absent is OK — see `sop_staff_directory_parse.md`) |
+| Unify CSV file missing | `sop_unify_csv_ingest.md` | `FatalUnifyCsvError` |
+| Unify CSV missing one of the 4 required columns | same | `FatalUnifyCsvError` |
+| Volunteer Credit Export missing `Full Contact ID` column (production files) | `sop_volunteer_credit_routing.md` | `FatalCreditExportError` |
+| Volunteer Credit Export header row 22 not found | same | `FatalCreditExportError` |
+| `exceptions.txt` exists but can't be read | `sop_exceptions_format.md` (note: file absent is OK — engine runs with zero exceptions) | (I/O error) |
+
+> Historical note: an earlier draft of this SOP listed "any row missing `full_contact_id`" as fatal. That was superseded by the 2026-05-20 identity-relaxation decision — see `sop_identity_and_join_model.md` § Per-row ID requirement. A roster row missing both IDs is a warning (`roster_row_no_identity`), not fatal.
 
 ## Operator-facing CSV
 

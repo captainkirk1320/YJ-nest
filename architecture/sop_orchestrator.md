@@ -60,18 +60,50 @@ Define the end-to-end sequence in which atomic scripts run during a single inges
                             │
                             ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ 7. WRITE                                                     │
+│ 7. STREAM C COMPUTE  (opt-in, gated on streamC?: opts)       │
+│   When `OrchestrateOptions.streamC` is supplied, these run   │
+│   in order against the VolunteerOutput[] produced by step 6: │
+│   - compute_momentum.ts      → momentum (sop_momentum.md)    │
+│   - compute_current_sprint.ts → currentSprint                │
+│         (sop_current_sprint.md; needs PushRecord[])          │
+│   - compute_signals.ts       → signals (sop_signals.md;      │
+│         depends on momentum + currentSprint)                 │
+│   - derive_role.ts           → role (sop_role.md; uses       │
+│         roster.is_sales_captain + admin allowlist)           │
+│   When `streamC` is omitted (v1 contract), the four fields   │
+│   stay genuinely `null` per the no-sentinel rule.            │
+└──────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 8. WRITE                                                     │
 │   - write_supabase.ts: idempotent upsert volunteers + teams  │
 │     + ingest_errors + exceptions mirror + ingest_run         │
 └──────────────────────────────────────────────────────────────┘
                             │
                             ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ 8. FINALIZE                                                  │
+│ 9. FINALIZE                                                  │
 │   - Write /.tmp/missing_matches_{date}.csv                   │
 │   - Update ingest_runs row: status, counts, finished_at      │
 └──────────────────────────────────────────────────────────────┘
 ```
+
+### Stream C opt-in contract (added 2026-05-22)
+
+Step 7 is conditional. The v1 §7.4 output contract leaves `role`, `signals`, `momentum`, and `currentSprint` as genuine `null` — Stream C runs only when the caller explicitly passes a `StreamCOptions` bundle:
+
+```ts
+type StreamCOptions = {
+  pushes: PushRecord[];                     // currentSprint window source
+  adminVolunteerIds?: Set<string>;          // promotes role to 'admin'
+  now?: Date;                               // injectable clock for tests
+};
+```
+
+Source files: `execution/src/derive_role.ts`, `compute_momentum.ts`, `compute_current_sprint.ts`, `compute_signals.ts`. Each has a matching `architecture/sop_*.md` cross-referenced in the box above. The four scripts mutate the `VolunteerOutput[]` from step 6 in-place; team rollups are NOT recomputed (Stream C is per-volunteer enrichment only).
+
+The remaining v2 fields (`levelId`, `compositePoints`, `rankDelta7d`, `sprintRank`, `weekPoints`, `fundraisingPercentile`, `activityPercentile`) require historical snapshots and stay `null` until a future Stream is built — see `sop_metrics_and_good_standing.md` § "v2 extension fields."
 
 ## Idempotency contract
 
@@ -96,6 +128,17 @@ When a credit-export file shows up with a NEWER `{timestamp}` for the same `{Tea
 3. compute_metrics excludes superseded batches: for each `(full_contact_id, team)`, the latest file timestamp wins; older batch contributions are filtered out at aggregation time.
 
 This means amendments don't double-count and old data isn't silently destroyed.
+
+### Same-timestamp ties (Codex F4, added 2026-05-22)
+
+If two distinct credit-export files for the SAME team mascot share the latest `{timestamp}`, the engine cannot deterministically pick a winner. Behavior:
+
+1. `compute_metrics.filterToLatestCreditBatchPerTeam` detects the tie by counting distinct `source_file_fingerprint` values for `(team_mascot, latest_timestamp)`.
+2. **Both batches are dropped** for that team — no records flow through to aggregation. The team's SF credit subtotals stay at zero for the run.
+3. A single `ambiguous_credit_batch_timestamp` `ingest_errors` row is emitted with `detail.source_files` listing the offending filenames.
+4. Operator resolves by deleting one file or amending its filename timestamp, then re-running.
+
+Rationale: the SOP defines no tie-break semantics, and silently keeping both files would double-count credit. Fail-closed-with-warning preserves correctness without halting the run for other teams.
 
 ## Partial-failure handling
 

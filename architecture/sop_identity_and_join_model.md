@@ -88,6 +88,8 @@ Before any other ingest runs, the engine validates the Master Roster:
 | Each row has at least one of `(full_contact_id, sales_rep_id)` | Both missing | `ingest_errors` of kind `roster_row_no_identity` (warning). Row dropped from in-memory roster; spreadsheet untouched. Ingest continues. |
 | `full_contact_id` (when present) is unique across the file | Duplicate IDs | **Hard fail.** Operator resolves before re-run. |
 | `sales_rep_id` (when present) is unique across the file | Duplicate IDs | **Hard fail.** |
+| **Derived synthetic `volunteers.id` is unique across the roster** (see § Canonical volunteer ID) | Collision | **Hard fail** (`FatalRosterError`). Two distinct roster rows that would land on the same Supabase PK — typically one row's `full_contact_id` is the literal string `"rep_<N>"` while another row's `sales_rep_id` is `<N>` with no `full_contact_id`. Operator must rename one before re-running. Added 2026-05-22 (Codex F3). |
+| **No row derives the reserved id `"org_uncredited"`** | Reserved-id capture | **Hard fail** (`FatalRosterError`). `"org_uncredited"` belongs to the synthetic N=0 bucket (`sop_multi_rep_split.md`) and cannot be re-used by a real volunteer row. |
 | `full_name` is unique across the file | Duplicate names | **Warning** logged as `duplicate_full_name`, ingest CONTINUES. Reason: name is not a join key, so a duplicate is a data-quality flag, not a correctness blocker. |
 | `phone` present + non-empty on every row where `member_type ∈ {Yellow Jacket, Future}` AND `active = true` | Missing phones | `ingest_errors` of kind `missing_phone`, ingest continues. Twilio OTP login will fail for that user. |
 | Each row's `member_type` resolves cleanly from legacy fields | Ambiguous | `ingest_errors` of kind `ambiguous_member_type` (error), row dropped. |
@@ -131,6 +133,10 @@ volunteers.id =
 ```
 
 The string `id` is stable: the same roster row produces the same `id` across ingest cycles, so idempotent upserts are unaffected. Both `full_contact_id` and `sales_rep_id` are also stored as their own nullable unique columns on the `volunteers` table for direct lookup.
+
+### Collision preflight (2026-05-22)
+
+Because `id` is *derived*, uniqueness of the inputs (`full_contact_id` alone, `sales_rep_id` alone) does **not** guarantee uniqueness of the output. After all rows are parsed, the engine builds a `seenSyntheticIds` map and hard-fails (`FatalRosterError`) if any two rows produce the same derived `id`. The reserved value `"org_uncredited"` is also forbidden because it belongs to the synthetic N=0 bucket. See `parse_master_roster.ts:251-280` for the implementation and the `Codex 2026-05-22 F3 — Synthetic volunteer-id collision preflight` block in `tests/codex_regressions.test.ts` for the regression coverage.
 
 ## What this SOP does NOT cover
 
