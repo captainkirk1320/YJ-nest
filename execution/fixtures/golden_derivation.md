@@ -213,5 +213,6 @@ Sort teams by totalPoints DESC, raised DESC, name ASC.
 | unexpected_points_campaign | Bob's "Some Event" / "Wrong Campaign" row | error |
 | unknown_sales_rep_id | rep 99999 in Unify row 10 | warning |
 | no_known_volunteer_on_row | Unify row 9 (all-staff) | warning |
+| file_team_mismatch | Carla Cedar (roster team = Pistol Petes) appears as a credited row in the `Gorlocks-...xlsx` credit export. Per `sop_volunteer_credit_routing.md`, credit still flows; warning is a data-quality flag for the operator. | warning |
 
-**Totals: 2 errors + 3 warnings.**
+**Totals: 2 errors + 4 warnings.**

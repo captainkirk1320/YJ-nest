@@ -245,5 +245,30 @@ export function parseMasterRoster(opts: ParseRosterOptions): Roster {
     if (sales_rep_id != null) bySalesRepId.set(sales_rep_id, row);
   });
 
+  // Synthetic-ID collision preflight (Codex F3). Two roster rows can collide
+  // on the derived volunteer.id when one row's full_contact_id is literally
+  // "rep_<N>" and another row has sales_rep_id = N with no full_contact_id.
+  // The reserved id "org_uncredited" is also off-limits.
+  const seenSyntheticIds = new Map<string, string>(); // id → debug label of first row
+  for (const r of out) {
+    const id = r.full_contact_id ?? (r.sales_rep_id != null ? `rep_${r.sales_rep_id}` : null);
+    if (id == null) continue; // row would have been dropped at preflight
+    if (id === 'org_uncredited') {
+      throw new FatalRosterError(
+        `Roster row for "${r.full_name}" derives reserved synthetic id "org_uncredited". ` +
+          `Rename the source row or supply a different full_contact_id before re-running.`,
+      );
+    }
+    const prior = seenSyntheticIds.get(id);
+    if (prior) {
+      throw new FatalRosterError(
+        `Synthetic volunteer id collision on "${id}": "${prior}" and "${r.full_name}" both ` +
+          `derive the same id. One row's full_contact_id likely matches "rep_<N>" while another row's ` +
+          `sales_rep_id is N. Resolve in the source spreadsheet before re-running.`,
+      );
+    }
+    seenSyntheticIds.set(id, r.full_name);
+  }
+
   return { rows: out, by_full_contact_id: byFullContactId, by_sales_rep_id: bySalesRepId };
 }

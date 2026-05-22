@@ -171,23 +171,58 @@ function filterToLatestCreditBatchPerTeam(
     const prior = latestByTeam.get(team);
     if (!prior || ts > prior) latestByTeam.set(team, ts);
   }
-  const droppedFiles = new Set<string>();
-  const kept = creditRecords.filter((r) => {
-    const latest = latestByTeam.get(r.team_mascot_from_filename);
-    if (r.source_file_timestamp === latest) return true;
-    droppedFiles.add(r.source_file);
-    return false;
-  });
-  if (droppedFiles.size > 0) {
-    errors.add({
-      kind: 'file_team_mismatch',
-      detail: {
-        reason: 'superseded_by_newer_export',
-        dropped_files: Array.from(droppedFiles),
-      },
-    });
+
+  // Codex F4: same-timestamp tie detection. If two distinct source files share
+  // the latest timestamp for the same team, the SOP defines no tie-break
+  // semantics — silently keeping both would double-count credit. Fail closed
+  // by dropping all records for that (team, timestamp) and emitting an error.
+  const teamsWithTies = new Set<string>();
+  const fingerprintsByTeamTs = new Map<string, Set<string>>(); // `${team}::${ts}` → set of fingerprints
+  for (const r of creditRecords) {
+    if (r.source_file_timestamp !== latestByTeam.get(r.team_mascot_from_filename)) continue;
+    const key = `${r.team_mascot_from_filename}::${r.source_file_timestamp}`;
+    let fps = fingerprintsByTeamTs.get(key);
+    if (!fps) {
+      fps = new Set();
+      fingerprintsByTeamTs.set(key, fps);
+    }
+    fps.add(r.source_file_fingerprint);
   }
-  return kept;
+  for (const [key, fps] of fingerprintsByTeamTs.entries()) {
+    if (fps.size > 1) {
+      const [team, ts] = key.split('::');
+      teamsWithTies.add(team!);
+      const offendingFiles = Array.from(
+        new Set(
+          creditRecords
+            .filter(
+              (r) =>
+                r.team_mascot_from_filename === team && r.source_file_timestamp === ts,
+            )
+            .map((r) => r.source_file),
+        ),
+      );
+      errors.add({
+        kind: 'ambiguous_credit_batch_timestamp',
+        detail: {
+          team_mascot: team,
+          timestamp: ts,
+          source_files: offendingFiles,
+          reason:
+            'Two distinct credit-export files share the latest timestamp for this team. ' +
+            'Resolve by deleting one or amending its filename timestamp before re-running.',
+        },
+      });
+    }
+  }
+
+  // Per sop_orchestrator.md § Superseding batches: silently drop older batches
+  // for the same team when a newer export is present. This is an idempotency
+  // mechanic, not a data-quality flag, so no warning is emitted for the drop.
+  return creditRecords.filter((r) => {
+    if (teamsWithTies.has(r.team_mascot_from_filename)) return false;
+    return r.source_file_timestamp === latestByTeam.get(r.team_mascot_from_filename);
+  });
 }
 
 export function computeMetrics(opts: ComputeMetricsOptions): ComputeMetricsResult {

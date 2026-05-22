@@ -22,6 +22,7 @@ const ERROR_KINDS = new Set<IngestErrorKind>([
   'ambiguous_split_exception_match',
   'ambiguous_member_type',
   'unparseable_staff_rep_id',
+  'ambiguous_credit_batch_timestamp',
 ]);
 
 const WARNING_KINDS = new Set<IngestErrorKind>([

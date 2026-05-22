@@ -22,8 +22,31 @@ import { parseUnifyCsv, FatalUnifyCsvError } from './parse_unify_csv.js';
 import { parseVolunteerCredit, FatalCreditExportError, type CashRoutingRule } from './parse_volunteer_credit.js';
 import { applyExceptionsAndSplit } from './apply_exceptions.js';
 import { computeMetrics } from './compute_metrics.js';
+import { deriveRole } from './derive_role.js';
+import { computeMomentum } from './compute_momentum.js';
+import { computeCurrentSprint } from './compute_current_sprint.js';
+import { computeSignals } from './compute_signals.js';
 import { InMemorySink } from './write_supabase.js';
-import type { CreditRecord, IngestSink, IngestRunSummary } from './types.js';
+import type {
+  CreditRecord,
+  IngestSink,
+  IngestRunSummary,
+  PushRecord,
+} from './types.js';
+
+/**
+ * Opt-in Stream C bundle. When omitted, the engine emits genuine NULL for
+ * role / signals / momentum / currentSprint (the v1-only contract). When
+ * present, the four Stream C scripts run after compute_metrics in this
+ * order — momentum → currentSprint → signals (depends on the prior two)
+ * → role.
+ */
+export type StreamCOptions = {
+  pushes: PushRecord[];
+  adminVolunteerIds?: Set<string>;
+  /** Defaults to `new Date()`. Injectable for deterministic tests. */
+  now?: Date;
+};
 
 export type OrchestrateOptions = {
   sourceDir: string;                          // directory containing Unify CSV + credit exports + exceptions.txt
@@ -42,6 +65,11 @@ export type OrchestrateOptions = {
   triggeredBy?: 'cli' | 'cron' | 'manual';
   tmpDir?: string;                             // defaults to {cwd}/.tmp
   logger?: (level: 'info' | 'warn' | 'error', msg: string, extra?: unknown) => void;
+  /**
+   * Opt-in v2 field population. Omit (or set falsy) to keep the legacy v1-only
+   * output where role/signals/momentum/currentSprint stay NULL.
+   */
+  streamC?: StreamCOptions;
 };
 
 export type OrchestrateResult = {
@@ -221,6 +249,43 @@ export async function orchestrate(opts: OrchestrateOptions): Promise<Orchestrate
       volunteers: volunteers.length,
       teams: teams.length,
     });
+
+    // ─── Step 6b — Stream C v2 field population (opt-in) ─────────────
+    // SOPs: sop_momentum.md → sop_current_sprint.md → sop_signals.md → sop_role.md
+    if (opts.streamC) {
+      const sc = opts.streamC;
+      const scNow = sc.now ?? new Date();
+      log('info', 'stream_c:start', {
+        pushes: sc.pushes.length,
+        admins: sc.adminVolunteerIds?.size ?? 0,
+        now: scNow.toISOString(),
+      });
+      computeMomentum({
+        volunteers,
+        creditRecords: allCredits,
+        pushes: sc.pushes,
+        roster,
+        now: scNow,
+      });
+      computeCurrentSprint({
+        volunteers,
+        creditRecords: allCredits,
+        pushes: sc.pushes,
+        roster,
+        now: scNow,
+        logger: log,
+      });
+      computeSignals({
+        volunteers,
+        now: scNow,
+      });
+      deriveRole({
+        volunteers,
+        roster,
+        adminVolunteerIds: sc.adminVolunteerIds,
+      });
+      log('info', 'stream_c:done');
+    }
 
     // ─── Step 7 — Write ──────────────────────────────────────────────
     const finished_at = new Date().toISOString();

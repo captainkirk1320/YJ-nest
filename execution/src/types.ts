@@ -210,6 +210,46 @@ export type TierId =
   | 'all-american'
   | 'heisman';
 
+// ─── v2 extension types (Stream C — sop_role.md, sop_momentum.md,
+//     sop_current_sprint.md, sop_signals.md). When Stream C is disabled
+//     the orchestrator leaves all four fields as `null` (the v1-only
+//     contract), per Decision 2026-05-20 "no sentinel defaults."
+
+export type VolunteerRole = 'volunteer' | 'sales_captain' | 'admin';
+
+export type VolunteerSignals = {
+  rising: boolean;
+  coasting: boolean;
+  atRisk: boolean;
+  signalReason: string | null;
+};
+
+export type VolunteerMomentum = {
+  activeSprintsLast4: number;
+  lastActionAt: string | null;
+  nextMilestoneActions: number | null;
+  sprintParticipationRate: number | null;
+};
+
+export type VolunteerCurrentSprint = {
+  sprintId: string;
+  fundraisingThisSprint: number;
+  pointsThisSprint: number;
+  sharesThisSprint: number | null;
+};
+
+// Push table row (sop_current_sprint.md, sop_momentum.md). Pilot loads these
+// inline via the orchestrator option; Stream D will source them from Supabase.
+export type PushRecord = {
+  id: string;
+  label: string;
+  event_type: string | null;
+  starts_at: string; // ISO timestamp
+  ends_at: string;   // ISO timestamp
+  target_amount: number | null;
+  active: boolean;
+};
+
 export type VolunteerOutput = {
   id: string; // synthetic PK
   full_contact_id: string | null;
@@ -241,11 +281,15 @@ export type VolunteerOutput = {
   };
   tierId: TierId | null;
   rank: number | null;
-  // v2 extension fields — genuinely null this session
-  role: null;
-  signals: null;
-  momentum: null;
-  currentSprint: null;
+  // v2 extension fields. compute_metrics emits all of these as `null`.
+  // Stream C scripts (derive_role, compute_momentum, compute_current_sprint,
+  // compute_signals) populate role / signals / momentum / currentSprint
+  // when enabled. The remaining five require historical snapshots and stay
+  // null until those streams ship.
+  role: VolunteerRole | null;
+  signals: VolunteerSignals | null;
+  momentum: VolunteerMomentum | null;
+  currentSprint: VolunteerCurrentSprint | null;
   levelId: null;
   compositePoints: null;
   rankDelta7d: null;
@@ -288,6 +332,7 @@ export type IngestErrorKind =
   | 'ambiguous_split_exception_match'
   | 'ambiguous_member_type'
   | 'unparseable_staff_rep_id'
+  | 'ambiguous_credit_batch_timestamp'
   // severity: warning (ingest continues)
   | 'unknown_sales_rep_id'
   | 'no_known_volunteer_on_row'

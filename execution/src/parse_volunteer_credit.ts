@@ -153,6 +153,37 @@ function cellStr(row: unknown[], col: number): string {
   return v == null ? '' : String(v).trim();
 }
 
+function maybeEmitTeamMismatch(args: {
+  errors: IngestErrorCollector;
+  fileBasename: string;
+  sheetRow: number;
+  rowHash: string;
+  fcid: string;
+  rosterTeam: string | null;
+  filenameMascot: string;
+  block: 'opportunities' | 'volunteer_points';
+  context: Record<string, unknown>;
+}): void {
+  // sop_volunteer_credit_routing.md § File-team vs roster-team mismatch.
+  // Skip the check when either side is unknown (filenameless export or roster
+  // with no team — Life/Board/Future-without-team). Credit still flows.
+  if (args.filenameMascot === '' || args.rosterTeam == null) return;
+  if (args.rosterTeam.toLowerCase() === args.filenameMascot.toLowerCase()) return;
+  args.errors.add({
+    kind: 'file_team_mismatch',
+    source_file: args.fileBasename,
+    source_row_number: args.sheetRow,
+    source_row_hash: args.rowHash,
+    full_contact_id: args.fcid,
+    detail: {
+      block: args.block,
+      filename_team_mascot: args.filenameMascot,
+      roster_team: args.rosterTeam,
+      ...args.context,
+    },
+  });
+}
+
 function cellNum(row: unknown[], col: number): number | null {
   if (col < 0 || col >= row.length) return null;
   const v = row[col];
@@ -286,6 +317,17 @@ export function parseVolunteerCredit(opts: ParseCreditOptions): CreditRecord[] {
         }
 
         if (route === 'dollars') {
+          maybeEmitTeamMismatch({
+            errors,
+            fileBasename,
+            sheetRow,
+            rowHash: leftHash,
+            fcid: leftFcid,
+            rosterTeam: roster.by_full_contact_id.get(leftFcid)!.team,
+            filenameMascot: team_mascot,
+            block: 'opportunities',
+            context: { opportunity_name: oppName, type: oppType },
+          });
           const record: CreditDollarsRecord = {
             source_file: fileBasename,
             source_block: 'opportunities',
@@ -355,6 +397,17 @@ export function parseVolunteerCredit(opts: ParseCreditOptions): CreditRecord[] {
           detail: { campaign, job_name: jobName },
         });
       } else {
+        maybeEmitTeamMismatch({
+          errors,
+          fileBasename,
+          sheetRow,
+          rowHash: rightHash,
+          fcid: rightFcid,
+          rosterTeam: roster.by_full_contact_id.get(rightFcid)!.team,
+          filenameMascot: team_mascot,
+          block: 'volunteer_points',
+          context: { job_name: jobName, campaign },
+        });
         const record: CreditPointsRecord = {
           source_file: fileBasename,
           source_block: 'volunteer_points',
