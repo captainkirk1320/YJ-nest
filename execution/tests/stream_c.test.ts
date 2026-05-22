@@ -76,15 +76,17 @@ const ROSTER: Roster = {
 
 function mkVolunteer(args: {
   id: string;
-  member_type: MemberType;
+  member_type: MemberType | null;
   has_nest_access: boolean;
+  full_contact_id?: string | null;
+  sales_rep_id?: number | null;
   is_sales_captain?: boolean;
   thresholds_all_met?: boolean;
 }): VolunteerOutput {
   return {
     id: args.id,
-    full_contact_id: args.id,
-    sales_rep_id: null,
+    full_contact_id: args.full_contact_id === undefined ? args.id : args.full_contact_id,
+    sales_rep_id: args.sales_rep_id ?? null,
     name: args.id,
     initials: '',
     email: null,
@@ -261,6 +263,76 @@ describe('compute_momentum', () => {
   it('returns momentum = null for non-Nest-access volunteers', () => {
     expect(find('C-LIFE').momentum).toBeNull();
   });
+
+  it('limits participation denominator to the 4 most recent ended pushes after sorting', () => {
+    const local = [mkVolunteer({ id: 'C-RISE-1', member_type: 'Yellow Jacket', has_nest_access: true })];
+    const pushes: PushRecord[] = [
+      { id: 'oldest', label: 'Oldest', event_type: null, starts_at: '2025-12-01T00:00:00Z', ends_at: '2025-12-31T00:00:00Z', target_amount: null, active: false },
+      { id: 'newest', label: 'Newest', event_type: null, starts_at: '2026-04-01T00:00:00Z', ends_at: '2026-04-30T00:00:00Z', target_amount: null, active: false },
+      { id: 'older', label: 'Older', event_type: null, starts_at: '2026-01-01T00:00:00Z', ends_at: '2026-01-31T00:00:00Z', target_amount: null, active: false },
+      { id: 'middle', label: 'Middle', event_type: null, starts_at: '2026-02-01T00:00:00Z', ends_at: '2026-02-28T00:00:00Z', target_amount: null, active: false },
+      { id: 'recent', label: 'Recent', event_type: null, starts_at: '2026-03-01T00:00:00Z', ends_at: '2026-03-31T00:00:00Z', target_amount: null, active: false },
+    ];
+
+    computeMomentum({
+      volunteers: local,
+      creditRecords: [mkOppCredit({ full_contact_id: 'C-RISE-1', amount_dollars: 100, timestamp: '2025-12-15T12:00:00Z' })],
+      pushes,
+      roster: ROSTER,
+      now: NOW,
+    });
+
+    expect(local[0]!.momentum?.activeSprintsLast4).toBe(0);
+    expect(local[0]!.momentum?.sprintParticipationRate).toBe(0);
+  });
+
+  it('excludes credits exactly at ended push ends_at from activeSprintsLast4', () => {
+    const local = [mkVolunteer({ id: 'C-RISE-1', member_type: 'Yellow Jacket', has_nest_access: true })];
+    computeMomentum({
+      volunteers: local,
+      creditRecords: [mkOppCredit({ full_contact_id: 'C-RISE-1', amount_dollars: 100, timestamp: '2026-04-30T23:59:59Z' })],
+      pushes: PUSHES,
+      roster: ROSTER,
+      now: NOW,
+    });
+
+    expect(local[0]!.momentum?.activeSprintsLast4).toBe(0);
+  });
+
+  it('uses the same synthetic id fallback as compute_metrics for credit grouping', () => {
+    const row = mkRosterRow({
+      full_contact_id: '',
+      sales_rep_id: 9001,
+      full_name: 'Fallback Fran',
+      member_type: 'Yellow Jacket',
+      team: 'Gorlocks',
+    });
+    const roster: Roster = {
+      rows: [row],
+      by_full_contact_id: new Map([['', row]]),
+      by_sales_rep_id: new Map([[9001, row]]),
+    };
+    const local = [
+      mkVolunteer({
+        id: 'rep_9001',
+        member_type: 'Yellow Jacket',
+        has_nest_access: true,
+        full_contact_id: '',
+        sales_rep_id: 9001,
+      }),
+    ];
+
+    computeMomentum({
+      volunteers: local,
+      creditRecords: [mkOppCredit({ full_contact_id: '', amount_dollars: 100, timestamp: '2026-04-15T12:00:00Z' })],
+      pushes: PUSHES,
+      roster,
+      now: NOW,
+    });
+
+    expect(local[0]!.momentum?.lastActionAt).toBe('2026-04-15T12:00:00Z');
+    expect(local[0]!.momentum?.activeSprintsLast4).toBe(1);
+  });
 });
 
 describe('compute_current_sprint', () => {
@@ -284,6 +356,90 @@ describe('compute_current_sprint', () => {
 
   it('returns currentSprint = null for non-Nest-access volunteers', () => {
     expect(find('C-LIFE').currentSprint).toBeNull();
+  });
+
+  it('excludes credits exactly at active push ends_at', () => {
+    const local = [mkVolunteer({ id: 'C-RISE-1', member_type: 'Yellow Jacket', has_nest_access: true })];
+    computeCurrentSprint({
+      volunteers: local,
+      creditRecords: [mkOppCredit({ full_contact_id: 'C-RISE-1', amount_dollars: 100, timestamp: '2026-05-26T23:59:59Z' })],
+      pushes: PUSHES,
+      roster: ROSTER,
+      now: NOW,
+    });
+
+    expect(local[0]!.currentSprint?.fundraisingThisSprint).toBe(0);
+  });
+
+  it('does not select a zero-width active push window', () => {
+    const local = [mkVolunteer({ id: 'C-RISE-1', member_type: 'Yellow Jacket', has_nest_access: true })];
+    computeCurrentSprint({
+      volunteers: local,
+      creditRecords: [mkOppCredit({ full_contact_id: 'C-RISE-1', amount_dollars: 100, timestamp: '2026-05-22T12:00:00Z' })],
+      pushes: [
+        { id: 'zero-width', label: 'Zero Width', event_type: null, starts_at: '2026-05-22T12:00:00Z', ends_at: '2026-05-22T12:00:00Z', target_amount: null, active: true },
+      ],
+      roster: ROSTER,
+      now: NOW,
+    });
+
+    expect(local[0]!.currentSprint).toBeNull();
+  });
+
+  it('picks the latest active push with id-desc tiebreak and logs a warning', () => {
+    const local = [mkVolunteer({ id: 'C-RISE-1', member_type: 'Yellow Jacket', has_nest_access: true })];
+    const logs: Array<{ level: string; msg: string; extra: unknown }> = [];
+    computeCurrentSprint({
+      volunteers: local,
+      creditRecords: [mkOppCredit({ full_contact_id: 'C-RISE-1', amount_dollars: 100, timestamp: '2026-05-20T12:00:00Z' })],
+      pushes: [
+        { id: 'push-a', label: 'A', event_type: null, starts_at: '2026-05-01T00:00:00Z', ends_at: '2026-06-01T00:00:00Z', target_amount: null, active: true },
+        { id: 'push-c', label: 'C', event_type: null, starts_at: '2026-05-10T00:00:00Z', ends_at: '2026-06-01T00:00:00Z', target_amount: null, active: true },
+        { id: 'push-b', label: 'B', event_type: null, starts_at: '2026-05-10T00:00:00Z', ends_at: '2026-06-01T00:00:00Z', target_amount: null, active: true },
+      ],
+      roster: ROSTER,
+      now: NOW,
+      logger: (level, msg, extra) => logs.push({ level, msg, extra }),
+    });
+
+    expect(local[0]!.currentSprint?.sprintId).toBe('push-c');
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({ level: 'warn', msg: 'current_sprint:multiple_active_pushes' });
+  });
+
+  it('uses the same synthetic id fallback as compute_metrics for sprint credit', () => {
+    const row = mkRosterRow({
+      full_contact_id: '',
+      sales_rep_id: 9001,
+      full_name: 'Fallback Fran',
+      member_type: 'Yellow Jacket',
+      team: 'Gorlocks',
+    });
+    const roster: Roster = {
+      rows: [row],
+      by_full_contact_id: new Map([['', row]]),
+      by_sales_rep_id: new Map([[9001, row]]),
+    };
+    const local = [
+      mkVolunteer({
+        id: 'rep_9001',
+        member_type: 'Yellow Jacket',
+        has_nest_access: true,
+        full_contact_id: '',
+        sales_rep_id: 9001,
+      }),
+    ];
+
+    computeCurrentSprint({
+      volunteers: local,
+      creditRecords: [mkOppCredit({ full_contact_id: '', amount_dollars: 125, timestamp: '2026-05-20T12:00:00Z' })],
+      pushes: PUSHES,
+      roster,
+      now: NOW,
+    });
+
+    expect(local[0]!.currentSprint?.fundraisingThisSprint).toBe(125);
+    expect(local[0]!.currentSprint?.pointsThisSprint).toBe(125);
   });
 });
 
@@ -320,6 +476,52 @@ describe('compute_signals', () => {
   it('returns signals = null for Life Members', () => {
     expect(find('C-LIFE').signals).toBeNull();
   });
+
+  it('keeps at-risk precedence for no-credit volunteers with Infinity daysSince', () => {
+    const local = [mkVolunteer({ id: 'C-SILENT', member_type: 'Yellow Jacket', has_nest_access: true })];
+    local[0]!.momentum = {
+      activeSprintsLast4: 0,
+      lastActionAt: null,
+      nextMilestoneActions: 1,
+      sprintParticipationRate: null,
+    };
+    local[0]!.currentSprint = {
+      sprintId: 'push-active',
+      fundraisingThisSprint: 500,
+      pointsThisSprint: 500,
+      sharesThisSprint: null,
+    };
+
+    computeSignals({ volunteers: local, now: NOW });
+
+    expect(local[0]!.signals).toEqual({
+      rising: false,
+      coasting: false,
+      atRisk: true,
+      signalReason: 'No tracked activity recorded',
+    });
+  });
+
+  it('does not produce NaN in the rising reason denominator', () => {
+    const local = [mkVolunteer({ id: 'C-RISE-1', member_type: 'Yellow Jacket', has_nest_access: true })];
+    local[0]!.momentum = {
+      activeSprintsLast4: 3,
+      lastActionAt: '2026-05-20T12:00:00Z',
+      nextMilestoneActions: 1,
+      sprintParticipationRate: 0.75,
+    };
+    local[0]!.currentSprint = {
+      sprintId: 'push-active',
+      fundraisingThisSprint: 100,
+      pointsThisSprint: 100,
+      sharesThisSprint: null,
+    };
+
+    computeSignals({ volunteers: local, now: NOW });
+
+    expect(local[0]!.signals?.rising).toBe(true);
+    expect(local[0]!.signals?.signalReason).toBe('3 of last 4 sprints active');
+  });
 });
 
 describe('derive_role', () => {
@@ -337,5 +539,41 @@ describe('derive_role', () => {
 
   it('leaves role = null for non-Nest-access volunteers', () => {
     expect(find('C-LIFE').role).toBeNull();
+  });
+});
+
+describe('Stream C synthetic org_uncredited row', () => {
+  it('leaves all four v2 extension fields null', () => {
+    const local = [
+      mkVolunteer({
+        id: 'org_uncredited',
+        member_type: null,
+        has_nest_access: false,
+        full_contact_id: null,
+        sales_rep_id: null,
+      }),
+    ];
+
+    computeMomentum({
+      volunteers: local,
+      creditRecords: CREDITS,
+      pushes: PUSHES,
+      roster: ROSTER,
+      now: NOW,
+    });
+    computeCurrentSprint({
+      volunteers: local,
+      creditRecords: CREDITS,
+      pushes: PUSHES,
+      roster: ROSTER,
+      now: NOW,
+    });
+    computeSignals({ volunteers: local, now: NOW });
+    deriveRole({ volunteers: local, roster: ROSTER });
+
+    expect(local[0]!.momentum).toBeNull();
+    expect(local[0]!.currentSprint).toBeNull();
+    expect(local[0]!.signals).toBeNull();
+    expect(local[0]!.role).toBeNull();
   });
 });

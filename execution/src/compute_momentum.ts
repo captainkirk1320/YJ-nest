@@ -16,6 +16,7 @@ import type {
   CreditRecord,
   PushRecord,
   Roster,
+  RosterRow,
   VolunteerOutput,
 } from './types.js';
 
@@ -26,6 +27,12 @@ export type ComputeMomentumOptions = {
   roster: Roster;
   now: Date;
 };
+
+function syntheticVolunteerId(row: RosterRow): string | null {
+  if (row.full_contact_id) return row.full_contact_id;
+  if (row.sales_rep_id != null) return `rep_${row.sales_rep_id}`;
+  return null;
+}
 
 export function computeMomentum(opts: ComputeMomentumOptions): void {
   const { volunteers, creditRecords, pushes, roster, now } = opts;
@@ -43,7 +50,7 @@ export function computeMomentum(opts: ComputeMomentumOptions): void {
   for (const c of creditRecords) {
     const row = roster.by_full_contact_id.get(c.full_contact_id);
     if (!row) continue;
-    const id = row.full_contact_id ?? (row.sales_rep_id != null ? `rep_${row.sales_rep_id}` : null);
+    const id = syntheticVolunteerId(row);
     if (!id) continue;
     let bucket = creditsByVolunteerId.get(id);
     if (!bucket) {

@@ -16,6 +16,7 @@ import type {
   CreditRecord,
   PushRecord,
   Roster,
+  RosterRow,
   VolunteerOutput,
 } from './types.js';
 
@@ -48,6 +49,12 @@ function pickActivePush(pushes: PushRecord[], nowMs: number): PushRecord | null 
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+function syntheticVolunteerId(row: RosterRow): string | null {
+  if (row.full_contact_id) return row.full_contact_id;
+  if (row.sales_rep_id != null) return `rep_${row.sales_rep_id}`;
+  return null;
 }
 
 export function computeCurrentSprint(opts: ComputeCurrentSprintOptions): void {
@@ -93,7 +100,7 @@ export function computeCurrentSprint(opts: ComputeCurrentSprintOptions): void {
 
     const row = roster.by_full_contact_id.get(c.full_contact_id);
     if (!row) continue;
-    const id = row.full_contact_id ?? (row.sales_rep_id != null ? `rep_${row.sales_rep_id}` : null);
+    const id = syntheticVolunteerId(row);
     if (!id) continue;
 
     const acc = ensure(id);
