@@ -1,0 +1,132 @@
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=Nunito+Sans:wght@400;600;700&family=Barlow+Condensed:ital,wght@1,900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Sora", sans-serif;
+  --font-condensed: "Barlow Condensed", sans-serif;
+  
+  --color-primary: #D02030;
+  --color-secondary: #C8102E;
+  --color-accent: #C8102E;
+  --color-link: #9C1A28;
+  --color-bg: #FFFFFF;
+  --color-surface: #FAFAFA;
+  --color-surface-subtle: #F5F5F5;
+  --color-border: #E5E5E5;
+  --color-text: #1A1A1A;
+  --color-text-secondary: #6B6B6B;
+  --color-disabled: #B0B0B0;
+  
+  --color-success: #1B8A3F;
+  --color-warning: #D97706;
+  --color-error: #B91C1C;
+  --color-info: #2563EB;
+
+  --color-brand-yellow: #FEC52E;
+  --color-brand-yellow-light: #FFF1C2;
+  --color-brand-yellow-dark: #876613;
+  --color-success-light: #F0F9F2;
+  --color-primary-light: #FEF1F2;
+}
+
+@layer base {
+  body {
+    @apply font-sans text-text bg-bg antialiased;
+  }
+  h1 {
+    @apply font-display font-bold text-[32px] text-text leading-tight;
+  }
+  h2 {
+    @apply font-display font-semibold text-[32px] text-text-secondary leading-tight;
+  }
+  h3 {
+    @apply font-display font-semibold text-[20px] text-text;
+  }
+}
+
+.wordmark {
+  @apply font-condensed font-black italic text-[24px] uppercase tracking-[-0.02em] select-none w-fit;
+  background: linear-gradient(90deg, #D02030 0%, #D02030 28%, #C4501E 42%, #FEC52E 58%, #FEC52E 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.eyebrow {
+  @apply font-display font-semibold text-[12px] uppercase tracking-[0.08em] text-text-secondary;
+}
+
+.large-data {
+  @apply font-display font-bold text-[36px] lg:text-[48px] text-text leading-none;
+}
+
+.bento-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 1024px) {
+  .bento-grid {
+    grid-template-columns: repeat(12, 1fr);
+    gap: 1.5rem;
+  }
+}
+
+.bento-card {
+  @apply bg-bg rounded-2xl border border-border shadow-sm overflow-hidden transition-all duration-300;
+}
+
+.bento-card-surface {
+  @apply bg-surface rounded-2xl border border-border transition-all duration-300;
+}
+
+.bento-card:hover {
+  @apply border-primary/20 shadow-md;
+}
+
+.progress-bar {
+  @apply h-2 w-full bg-border rounded-full overflow-hidden;
+}
+
+.progress-fill {
+  @apply h-full bg-primary transition-all duration-700 ease-out;
+}
+
+.progress-fill.goal-reached {
+  @apply bg-success;
+}
+
+.btn-primary {
+  @apply bg-primary text-white font-bold py-3 px-6 rounded-xl hover:bg-secondary transition-all flex items-center justify-center gap-2 disabled:bg-disabled active:scale-[0.98];
+}
+
+.btn-secondary {
+  @apply bg-white border border-primary text-primary font-bold py-3 px-6 rounded-xl hover:bg-surface transition-all flex items-center justify-center gap-2 active:scale-[0.98];
+}
+
+.btn-tertiary {
+  @apply text-primary font-bold hover:underline transition-all flex items-center justify-center gap-2;
+}
+
+.avatar-circle {
+  @apply w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white font-bold text-sm shadow-sm;
+}
+
+.nav-active {
+  @apply relative after:absolute after:bottom-0 after:left-1/2 after:-translate-x-1/2 after:w-8 after:h-1 after:bg-primary after:rounded-t-full;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-border rounded-full;
+}

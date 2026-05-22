@@ -1,0 +1,41 @@
+# Secrets — NEVER commit
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+.secrets/
+
+# Engine intermediate output
+.tmp/
+*.log
+
+# Three-brain tooling output (Codex/Gemini scratch)
+three-brain-out/
+
+# Excalidraw working files (export deliverables instead)
+*.excalidraw
+
+# Large media — meeting recordings, etc.
+*.mp4
+*.mov
+*.mp3
+*.wav
+
+# Mac-specific shadow files in xlsx/docx
+~$*
+
+# Node / build artifacts
+node_modules/
+dist/
+build/
+coverage/
+
+# OS / editor
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Sample data — keep tracked (sources of truth for golden tests)
+# (no exclusions for Process Documentation/)

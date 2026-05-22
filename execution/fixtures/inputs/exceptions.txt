@@ -1,0 +1,26 @@
+# Golden-test exceptions fixture.
+# Two active blocks exercising SPLIT (T-001) and ADJUST (T-002).
+
+---
+ID: T-001
+Added: 2026-05-21
+Active: yes
+Type: SPLIT
+Account: Family redirect
+Match: contains
+Reps:
+  - 9103 Carla Cedar: 50%
+  - 9108 Hank Holly: 50%
+Notes: Test fixture — redirects 'Family redirect' account to Carla + Hank.
+
+---
+ID: T-002
+Added: 2026-05-21
+Active: yes
+Type: ADJUST
+Account: Test adjustment
+Match: contains
+Adjustments:
+  - 9102 Bob Birch: +50 rate_bowl
+  - 9108 Hank Holly: -50 rate_bowl
+Notes: Test fixture — manual transfer of $50 Rate Bowl credit.

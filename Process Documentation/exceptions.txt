@@ -1,0 +1,228 @@
+# YJ-Nest Reconciliation Exceptions
+#
+# THIS IS A DRAFT. Every block below has Active: no.
+# The engine will parse and validate these blocks but will NOT apply them
+# to credit math until Conor + Kirk review each one and flip Active: yes.
+#
+# Seeded from: Process Documentation/Manual Tweaks for YJ Report.docx (~11 entries)
+# Format spec: architecture/sop_exceptions_format.md
+# Naming convention: OV-### = "OVerride", numbered in docx order.
+#
+# Editing guide:
+#   - Blocks are separated by a line of exactly "---"
+#   - Reps are joined by sales_rep_id (the numeric value), NOT name
+#   - SPLIT percentages must sum to 100
+#   - ADJUST metric must be one of: total_fundraising, rate_bowl,
+#     wishes_for_teachers, total_points
+#   - Lines starting with "#" are comments (this header only — block bodies
+#     do not support comments).
+#
+# Review notes (per-block) call out:
+#   - missing rep IDs (volunteer not found in 26-27 Full Roster.xlsx)
+#   - account-name ambiguity (what string in Unify matches?)
+#   - SPLIT-vs-ADJUST interpretation calls
+
+---
+ID: OV-001
+Added: 2026-05-21
+Active: no
+Type: SPLIT
+Account: Meyer
+Match: contains
+Reps:
+  - 2095096 Damien Meyer: 50%
+  - 2044794 Steven Davis: 50%
+Notes: Docx says "Patrick (MEYER) and Steven Davis (HOLTZ) get split credit for
+  their dad's account ($1742 for each of them)." Roster has no "Patrick Meyer" —
+  closest match is Damien Meyer (rep_id=2095096). Confirm whether the intended
+  volunteer is Damien or whether Patrick Meyer is missing from the roster.
+  Also confirm: is this a 50/50 SPLIT of the dad's account total, or a fixed
+  +$1742 ADJUST for each (which would imply the dad's account is $3,484)?
+  Account-match field "Meyer" needs the actual Unify Account Name string —
+  likely the father's last name + first name. Pending: rep, intent, account.
+
+---
+ID: OV-002
+Added: 2026-05-21
+Active: no
+Type: SPLIT
+Account: Gavin Hays
+Match: contains
+Reps:
+  - 2041827 Richie Schmock: 100%
+Notes: Docx says "Richie Schmock (HAYES) and Scott Bernstein — Gavin Hays
+  will be applied to Richie's credit and total numbers. Scott will only see
+  it on his personal report when he asks for it." Roster has no "Gavin Hays"
+  — confirm whether Gavin is a buyer (an account name in Unify) or another
+  volunteer. The "Scott sees it on personal report when asked" carve-out is
+  out of engine scope — engine credits 100% to Richie; Scott's personal-
+  report request is a non-engine workflow.
+
+---
+ID: OV-003
+Added: 2026-05-21
+Active: no
+Type: SPLIT
+Account: SRP
+Match: contains
+Reps:
+  - 2041778 Renee Higgs: 50%
+  - 2041799 Logan Senoski: 50%
+Notes: Docx: "Renne Higgs (DILLINGHAM) and Logan Senoski (SANDERS) will split
+  SRP credit 50/50." Clean entry. Confirm the Unify Account Name for SRP
+  (Salt River Project?) matches "SRP" by contains, or whether the full
+  account string is something like "Salt River Project" and Match: contains
+  on "Salt River" would be safer.
+
+---
+ID: OV-004
+Added: 2026-05-21
+Active: no
+Type: ADJUST
+Account: Dorsey & Whitney
+Match: contains
+Adjustments:
+  - 31562 Brian Moll: +3800 total_fundraising
+  - 31562 Brian Moll: +3800 total_points
+Notes: Docx: "Dorsey & Whitney – Brian Moll (ROCKNE) receives credit for
+  additional Cantina Club tickets and pregame party passes ($3,800 total,
+  $600 for Club 71 and $3,200 for tickets). Gabriel Harsell (HOLTZ) will get
+  credit for remaining total ($7,250)." Gabriel Harsell is NOT in the roster
+  — confirm whether he is a separate volunteer who needs roster entry, or
+  whether Gabe is already getting his $7,250 by default (so only the
+  +$3,800 transfer to Brian needs an exception). This block currently models
+  only Brian's +$3,800 add. If Gabe's credit also needs adjustment, add a
+  second ADJUST. Points adjustment mirrors dollars at the 1.0 multiplier.
+
+---
+ID: OV-005
+Added: 2026-05-21
+Active: no
+Type: ADJUST
+Account: Suzanne Nelson Rate Bowl
+Match: contains
+Adjustments:
+  - 2044807 Suzanne Nelson: +276 rate_bowl
+  - 2044807 Suzanne Nelson: +276 total_points
+Notes: Docx: "Suzanne Nelson (BRYANT) $276 Rate Bowl add (Frank Sanders)."
+  Roster has no "Frank Sanders" — closest is Grant Sanders (rep_id=2041852).
+  Ambiguous whether this is a transfer from Frank/Grant Sanders or a
+  standalone +$276 add (missing Unify credit). Currently modeled as add-only,
+  no deduction. Confirm: who is "Frank Sanders" and should this be paired
+  with a -$276 to him?
+
+---
+ID: OV-006
+Added: 2026-05-21
+Active: no
+Type: ADJUST
+Account: Boyer / BJB Properties
+Match: contains
+Adjustments:
+  - 2044788 Bryan Boyer: +429 rate_bowl
+  - 2044788 Bryan Boyer: +604 rate_bowl
+  - 2044788 Bryan Boyer: +1033 total_points
+Notes: Docx: "Bryan Boyer (BRYANT) $429 – Boyer & $604 – BJB Properties Rate
+  Bowl Tix." Modeled as two ADJUST entries summing to +$1033 rate_bowl.
+  Confirm whether these are missing Unify credits Bryan needs added, or
+  whether these are transfers from other reps (which would require
+  matching -$ entries). Points add mirrors total dollars at 1.0 multiplier.
+
+---
+ID: OV-007
+Added: 2026-05-21
+Active: yes
+Type: ADJUST
+Account: Barkyoumb
+Match: contains
+Adjustments:
+  - 2041805 Eric Barkyoumb: -800 rate_bowl
+  - 2095089 Kerri Cummiskey: +800 rate_bowl
+Notes: Docx: "Barkyoumb (HOLTZ) minus $800 Rate Bowl & Kerry Cummiskey
+  (SABAN & FUTURES) Plus $800 Rate Bowl. (Barkyoumb sale)." Clean transfer.
+  Active: yes — this is the cleanest entry in the corpus and matches the
+  OV-002 example in CLAUDE.md decisions.md verbatim. Note: docx spells
+  "Kerry" — roster spells "Kerri" — engine uses the rep_id so spelling
+  doesn't matter. Note: net zero on rate_bowl means total_points net change
+  is also zero, so no points adjustment needed.
+
+---
+ID: OV-008
+Added: 2026-05-21
+Active: no
+Type: SPLIT
+Account: RB Group
+Match: contains
+Reps:
+  - 2044810 Melissa Stack: 100%
+Notes: Docx: "Melissa Stack (PATERNO) RB Group (from Chip Pray)." Reads as
+  a 100% redirect of RB Group credit to Melissa, away from Chip Pray's
+  default attribution. Confirm: is "RB Group" the Unify Account Name string,
+  or shorthand for something else? Confirm: should this carry an Item:
+  scope, or apply to all items on the RB Group account?
+
+---
+ID: OV-009
+Added: 2026-05-21
+Active: no
+Type: SPLIT
+Account: Brian Prichard
+Match: contains
+Item: Fiesta Bowl
+Reps:
+  - 2041789 Jim Kebert: 100%
+Notes: Docx: "Brian Prichard Sales: VFB Jim Kebert (MEYER) RB Chad Hunter
+  (HAYES)." First of two blocks splitting Brian Prichard's sale by item
+  type. VFB = Vrbo Fiesta Bowl items go 100% to Jim Kebert. Roster has no
+  "Brian Prichard" — confirm he's the buyer (account name), not a volunteer.
+  Confirm Item: scope — "Fiesta Bowl" substring will catch all Fiesta Bowl
+  product names including Club '71 + parking. If only ticket items are
+  intended, tighten the Item: filter.
+
+---
+ID: OV-010
+Added: 2026-05-21
+Active: no
+Type: SPLIT
+Account: Brian Prichard
+Match: contains
+Item: Rate Bowl
+Reps:
+  - 2044801 Chad Hunter: 100%
+Notes: Companion to OV-009. Rate Bowl items from Brian Prichard's account
+  go 100% to Chad Hunter. Same Brian-Prichard-is-buyer-not-volunteer flag.
+
+---
+ID: OV-011
+Added: 2026-05-21
+Active: no
+Type: ADJUST
+Account: Gubernick (Katelyn Saunders RB transfer)
+Match: contains
+Adjustments:
+  - 2011421 Katelyn Saunders: +630 rate_bowl
+  - 2041804 Brian Gubernick: -630 rate_bowl
+Notes: Docx: "Katelyn Saunders (SABAN) $630 Rate Bowl from Gubernick
+  (DILLINGHAM)." Roster has TWO Gubernicks — Brian (rep_id=2041804) and
+  Stephen (rep_id=2062816). Brian is on team Cobbers; Stephen is on team
+  Pistol Petes. Docx note "(DILLINGHAM)" disambiguates by team-coach name —
+  confirm with Conor which Gubernick is intended. Currently modeled as
+  Brian. If Stephen, change rep_id to 2062816.
+
+---
+ID: OV-012
+Added: 2026-05-21
+Active: yes
+Type: ADJUST
+Account: Comm Champs Crowson Green
+Match: contains
+Adjustments:
+  - 2041823 Walker Crowson: +110 total_fundraising
+  - 2041823 Walker Crowson: +110 total_points
+  - 2041809 Darius Green: -110 total_fundraising
+  - 2041809 Darius Green: -110 total_points
+Notes: Docx: "Walker Crowson (DILLINGHAM) $110 Comm Champs donation from
+  Darius Green (PETERSEN)." Clean transfer of a Community Champions
+  donation ($110) from Darius to Walker. Active: yes — relatively
+  unambiguous. Note: Comm Champs = Community Champions, a donation
+  category (counts toward totalFundraising).

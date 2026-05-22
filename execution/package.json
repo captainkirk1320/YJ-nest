@@ -1,0 +1,25 @@
+{
+  "name": "yj-nest-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "YJ-Nest reconciliation engine: Unify + Salesforce → Supabase volunteers table",
+  "scripts": {
+    "ingest": "tsx src/orchestrator.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "seed:exceptions": "tsx scripts/seed_exceptions_from_docx.ts"
+  },
+  "dependencies": {
+    "csv-parse": "^5.5.6",
+    "mammoth": "^1.8.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
