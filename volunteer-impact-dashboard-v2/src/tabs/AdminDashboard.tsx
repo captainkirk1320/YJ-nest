@@ -20,10 +20,18 @@ import { Volunteer, VolunteerSignals } from '../types';
 type SignalFilter = 'all' | 'rising' | 'coasting' | 'at_risk' | 'good_standing';
 
 function signalOf(v: Volunteer): SignalFilter {
-  if (v.signals.atRisk) return 'at_risk';
-  if (v.signals.coasting) return 'coasting';
-  if (v.signals.rising) return 'rising';
-  if (Object.values(v.thresholds).every(Boolean)) return 'good_standing';
+  // When Stream C signals are null, no signal classification applies —
+  // volunteer counts only against the Good Standing bucket (if all four
+  // thresholds === true) and otherwise falls through to 'all'.
+  if (v.signals?.atRisk === true) return 'at_risk';
+  if (v.signals?.coasting === true) return 'coasting';
+  if (v.signals?.rising === true) return 'rising';
+  if (
+    v.thresholds.totalFundraising === true &&
+    v.thresholds.rateBowl === true &&
+    v.thresholds.wishesForTeachers === true &&
+    v.thresholds.totalPoints === true
+  ) return 'good_standing';
   return 'all';
 }
 
@@ -47,10 +55,15 @@ export default function AdminDashboard({ onDrillIntoVolunteer }: AdminDashboardP
   const signalCounts = useMemo(() => {
     const counts = { rising: 0, coasting: 0, at_risk: 0, good_standing: 0 };
     for (const v of VOLUNTEERS) {
-      if (v.signals.atRisk) counts.at_risk++;
-      else if (v.signals.coasting) counts.coasting++;
-      else if (v.signals.rising) counts.rising++;
-      if (Object.values(v.thresholds).every(Boolean)) counts.good_standing++;
+      if (v.signals?.atRisk === true) counts.at_risk++;
+      else if (v.signals?.coasting === true) counts.coasting++;
+      else if (v.signals?.rising === true) counts.rising++;
+      if (
+        v.thresholds.totalFundraising === true &&
+        v.thresholds.rateBowl === true &&
+        v.thresholds.wishesForTeachers === true &&
+        v.thresholds.totalPoints === true
+      ) counts.good_standing++;
     }
     return counts;
   }, []);
@@ -59,10 +72,15 @@ export default function AdminDashboard({ onDrillIntoVolunteer }: AdminDashboardP
     let list = VOLUNTEERS;
     if (filter !== 'all') {
       list = list.filter(v => {
-        if (filter === 'rising') return v.signals.rising;
-        if (filter === 'coasting') return v.signals.coasting;
-        if (filter === 'at_risk') return v.signals.atRisk;
-        if (filter === 'good_standing') return Object.values(v.thresholds).every(Boolean);
+        if (filter === 'rising') return v.signals?.rising === true;
+        if (filter === 'coasting') return v.signals?.coasting === true;
+        if (filter === 'at_risk') return v.signals?.atRisk === true;
+        if (filter === 'good_standing') {
+          return v.thresholds.totalFundraising === true &&
+                 v.thresholds.rateBowl === true &&
+                 v.thresholds.wishesForTeachers === true &&
+                 v.thresholds.totalPoints === true;
+        }
         return true;
       });
     }
@@ -177,7 +195,12 @@ export default function AdminDashboard({ onDrillIntoVolunteer }: AdminDashboardP
                   <SignalPill signals={v.signals} />
                 </div>
                 <p className="text-[10px] text-text-secondary truncate">
-                  {v.team} · ${v.metrics.totalFundraising.toLocaleString()} · {v.metrics.currentSprint?.sharesThisSprint ?? 0} shares this sprint
+                  {v.team} · ${v.metrics.totalFundraising.toLocaleString()}
+                  {v.metrics.currentSprint == null
+                    ? ''
+                    : v.metrics.currentSprint.sharesThisSprint != null
+                      ? ` · ${v.metrics.currentSprint.sharesThisSprint} shares this sprint`
+                      : ' · shares not yet measured'}
                 </p>
               </div>
               <ArrowRight size={14} className="text-text-secondary flex-shrink-0" />
@@ -207,7 +230,10 @@ function SignalCard({ label, count, accent, icon, onClick, active }: { label: st
   );
 }
 
-function SignalPill({ signals }: { signals: VolunteerSignals }) {
+function SignalPill({ signals }: { signals: VolunteerSignals | null }) {
+  // signals === null ⇒ Stream C disabled. Render nothing (neutral) rather than
+  // a "no signal" badge, which would imply we ran the check and found nothing.
+  if (signals == null) return null;
   if (signals.atRisk) return <span className="text-[9px] font-bold uppercase tracking-widest bg-error/10 text-error px-2 py-0.5 rounded-full">At risk</span>;
   if (signals.coasting) return <span className="text-[9px] font-bold uppercase tracking-widest bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">Coasting</span>;
   if (signals.rising) return <span className="text-[9px] font-bold uppercase tracking-widest bg-success/10 text-success px-2 py-0.5 rounded-full">Rising</span>;

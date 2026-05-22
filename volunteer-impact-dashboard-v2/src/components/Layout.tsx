@@ -44,14 +44,21 @@ const CAPTAIN_TAB = { icon: Users, label: 'MyTeam' as TabType, displayLabel: 'My
 const ADMIN_TAB   = { icon: Shield, label: 'Admin' as TabType, displayLabel: 'Admin' };
 
 function navForRole(role: Volunteer['role']) {
-  if (role === 'admin')   return [...BASE_NAV, CAPTAIN_TAB, ADMIN_TAB];
-  if (role === 'captain') return [...BASE_NAV, CAPTAIN_TAB];
+  if (role === 'admin')         return [...BASE_NAV, CAPTAIN_TAB, ADMIN_TAB];
+  if (role === 'sales_captain') return [...BASE_NAV, CAPTAIN_TAB];
+  // null (Stream C disabled) or 'volunteer' → base nav only.
   return BASE_NAV;
 }
 
 export default function Layout({ children, activeTab, currentUser, onTabChange, onAvatarClick, onLogout }: LayoutProps) {
-  const metCount = Object.values(currentUser.thresholds).filter(Boolean).length;
-  const progressPercent = (metCount / 4) * 100;
+  // Avatar progress ring reflects Good Standing progress (4 thresholds met).
+  // Only render confident progress when every threshold has been measured.
+  // For non-YJ/Future members (Board / Life) every threshold is null — the
+  // ring renders empty rather than a misleading 0% "you're failing" state.
+  const thresholdValues = Object.values(currentUser.thresholds);
+  const allMeasured = thresholdValues.every(t => t != null);
+  const metCount = thresholdValues.filter(t => t === true).length;
+  const progressPercent = allMeasured ? (metCount / 4) * 100 : 0;
   const radius = 18;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (progressPercent / 100) * circumference;
@@ -127,7 +134,9 @@ export default function Layout({ children, activeTab, currentUser, onTabChange, 
               <div className="flex items-center gap-1.5">
                 <p className="text-[10px] font-bold text-text-secondary uppercase tracking-wider">{currentUser.team}</p>
                 <span className="text-[10px] font-bold text-text-secondary/30">•</span>
-                <p className="text-[10px] font-black text-primary uppercase whitespace-nowrap">{Math.round(progressPercent)}%</p>
+                <p className="text-[10px] font-black text-primary uppercase whitespace-nowrap">
+                  {allMeasured ? `${Math.round(progressPercent)}%` : '—'}
+                </p>
               </div>
             </div>
           </button>

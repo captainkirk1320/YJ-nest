@@ -184,9 +184,10 @@ export const VOLUNTEERS: Volunteer[] = [
     team: 'Red Foxes',
     teamId: 't-1',
     // v2.1.4: 13.1k pts < 17.5k Walk-On (Active) threshold — no tier yet
-    role: 'captain',
+    tierId: null,
+    role: 'sales_captain',
     volunteerCategory: 'Active',
-    signals: { rising: false, coasting: false, atRisk: false },
+    signals: { rising: false, coasting: false, atRisk: false, signalReason: null },
     momentum: { activeSprintsLast4: 3, lastActionAt: '2026-05-17', nextMilestoneActions: 1, sprintParticipationRate: 0.75 },
     thresholds: { totalFundraising: true, rateBowl: false, wishesForTeachers: false, totalPoints: false },
     metrics: {
@@ -232,6 +233,7 @@ export const VOLUNTEERS: Volunteer[] = [
     team: 'Red Foxes',
     teamId: 't-1',
     // v2.1.4: Active, 10.6k pts < 17.5k Walk-On threshold — no tier yet
+    tierId: null,
     role: 'volunteer',
     volunteerCategory: 'Active',
     signals: { rising: false, coasting: true, atRisk: false, signalReason: 'No shares in 11 days, runway to Good Standing' },
@@ -277,7 +279,7 @@ export const VOLUNTEERS: Volunteer[] = [
     phone: '+15550127',
     raised: 1200, goal: 10000, rank: 104,
     team: 'Red Foxes', teamId: 't-1',
-    role: 'volunteer', volunteerCategory: 'Future',
+    tierId: null, role: 'volunteer', volunteerCategory: 'Future',
     signals: { rising: false, coasting: false, atRisk: true, signalReason: 'No activity in 23 days, bottom 15% in $ and shares' },
     momentum: { activeSprintsLast4: 0, lastActionAt: '2026-04-26', nextMilestoneActions: 1, sprintParticipationRate: 0 },
     thresholds: { totalFundraising: false, rateBowl: false, wishesForTeachers: false, totalPoints: false },
@@ -295,7 +297,7 @@ export const VOLUNTEERS: Volunteer[] = [
     phone: '+15550128',
     raised: 2800, goal: 10000, rank: 96,
     team: 'Red Foxes', teamId: 't-1',
-    role: 'volunteer', volunteerCategory: 'Future',
+    tierId: null, role: 'volunteer', volunteerCategory: 'Future',
     signals: { rising: false, coasting: false, atRisk: true, signalReason: 'Missed last 2 meetings, zero shares this sprint' },
     momentum: { activeSprintsLast4: 0, lastActionAt: '2026-04-30', nextMilestoneActions: 1, sprintParticipationRate: 0 },
     thresholds: { totalFundraising: false, rateBowl: false, wishesForTeachers: false, totalPoints: false },
@@ -313,7 +315,7 @@ export const VOLUNTEERS: Volunteer[] = [
     phone: '+15550129',
     raised: 6400, goal: 10000, rank: 71,
     team: 'Red Foxes', teamId: 't-1',
-    role: 'volunteer', volunteerCategory: 'Active',
+    tierId: null, role: 'volunteer', volunteerCategory: 'Active',
     signals: { rising: false, coasting: true, atRisk: false, signalReason: '14 days quiet, runway exists' },
     momentum: { activeSprintsLast4: 2, lastActionAt: '2026-05-04', nextMilestoneActions: 1, sprintParticipationRate: 0.5 },
     thresholds: { totalFundraising: false, rateBowl: true, wishesForTeachers: false, totalPoints: false },
@@ -331,7 +333,7 @@ export const VOLUNTEERS: Volunteer[] = [
     phone: '+15550130',
     raised: 9100, goal: 10000, rank: 38,
     team: 'Red Foxes', teamId: 't-1',
-    role: 'volunteer', volunteerCategory: 'Future',
+    tierId: null, role: 'volunteer', volunteerCategory: 'Future',
     signals: { rising: true, coasting: false, atRisk: false, signalReason: 'First donor of the push closed yesterday' },
     momentum: { activeSprintsLast4: 3, lastActionAt: '2026-05-18', nextMilestoneActions: 1, sprintParticipationRate: 0.75 },
     thresholds: { totalFundraising: false, rateBowl: true, wishesForTeachers: true, totalPoints: false },
@@ -855,7 +857,7 @@ export const NUDGE_TEMPLATES: NudgeTemplate[] = [
 ];
 
 // Demo: current user's role. In production this comes from the Volunteer record.
-export const CURRENT_USER_ROLE: VolunteerRole = 'captain';
+export const CURRENT_USER_ROLE: VolunteerRole = 'sales_captain';
 
 // ============================================================
 // v2.1 — Levels (gamification ladder) + leaderboard mock data

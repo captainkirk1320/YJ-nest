@@ -38,25 +38,46 @@ export default function TeamTab() {
     }
   };
 
-  const StandingPills = ({ v }: { v: Volunteer }) => (
-    <div className="flex flex-wrap gap-1.5 min-w-[200px]">
-      <div className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-tight ${v.thresholds.totalFundraising ? 'bg-success text-white' : 'bg-warning text-white'}`}>
-        Dollars
+  // Threshold pills must distinguish three states:
+  //   true  → success (measured + cleared)
+  //   false → warning (measured + missed)
+  //   null  → neutral (rule does not apply: Board / Life Member / Life Director,
+  //           OR Stream C hasn't run). Rendering null as "warning" misrepresents
+  //           non-Nest members as failing. See sop_v2_frontend_null_guards.md.
+  const pillClass = (value: boolean | null) =>
+    value === true
+      ? 'bg-success text-white'
+      : value === false
+        ? 'bg-warning text-white'
+        : 'bg-surface text-text-secondary border border-border';
+  const measuredThresholdCount = (v: Volunteer) =>
+    Object.values(v.thresholds).filter(t => t != null).length;
+  const metThresholdCount = (v: Volunteer) =>
+    Object.values(v.thresholds).filter(t => t === true).length;
+
+  const StandingPills = ({ v }: { v: Volunteer }) => {
+    const measured = measuredThresholdCount(v);
+    const met = metThresholdCount(v);
+    return (
+      <div className="flex flex-wrap gap-1.5 min-w-[200px]">
+        <div className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-tight ${pillClass(v.thresholds.totalFundraising)}`}>
+          Dollars
+        </div>
+        <div className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-tight ${pillClass(v.thresholds.rateBowl)}`}>
+          Rate
+        </div>
+        <div className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-tight ${pillClass(v.thresholds.wishesForTeachers)}`}>
+          Wish
+        </div>
+        <div className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-tight ${pillClass(v.thresholds.totalPoints)}`}>
+          Pts
+        </div>
+        <span className="text-[10px] font-bold text-text-secondary ml-1 bg-surface px-1.5 py-0.5 rounded border border-border">
+          {measured === 0 ? '—' : `${met}/${measured}`}
+        </span>
       </div>
-      <div className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-tight ${v.thresholds.rateBowl ? 'bg-success text-white' : 'bg-warning text-white'}`}>
-        Rate
-      </div>
-      <div className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-tight ${v.thresholds.wishesForTeachers ? 'bg-success text-white' : 'bg-warning text-white'}`}>
-        Wish
-      </div>
-      <div className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-tight ${v.thresholds.totalPoints ? 'bg-success text-white' : 'bg-warning text-white'}`}>
-        Pts
-      </div>
-      <span className="text-[10px] font-bold text-text-secondary ml-1 bg-surface px-1.5 py-0.5 rounded border border-border">
-        {Object.values(v.thresholds).filter(Boolean).length}/4
-      </span>
-    </div>
-  );
+    );
+  };
 
   const TierIcon = ({ tierId }: { tierId?: string }) => {
     if (!tierId) return null;
@@ -112,7 +133,12 @@ export default function TeamTab() {
                {myTeam.raised >= 40000 ? 'On Pace' : 'Behind Pace'}
             </div>
             <p className="text-xs text-text-secondary font-medium">
-              {myTeammates.filter(v => Object.values(v.thresholds).every(Boolean)).length} of {myTeammates.length} in Good Standing
+              {myTeammates.filter(v =>
+                v.thresholds.totalFundraising === true &&
+                v.thresholds.rateBowl === true &&
+                v.thresholds.wishesForTeachers === true &&
+                v.thresholds.totalPoints === true,
+              ).length} of {myTeammates.length} in Good Standing
             </p>
           </div>
         </div>
@@ -149,8 +175,11 @@ export default function TeamTab() {
                       <p className="font-display font-bold text-sm text-text group-hover:text-primary transition-colors">
                         {member.name} {member.id === currentUser.id && '(You)'}
                       </p>
-                      {member.id === 'u-1' && (
-                         <span className="text-[8px] font-black bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20 uppercase tracking-tighter">Captain</span>
+                      {/* Sales Captain badge = the team-lead role. Distinct from the
+                          50,000-pt "Captain" tier (tierId === 'captain'), which is
+                          surfaced separately by TierIcon below. */}
+                      {member.role === 'sales_captain' && (
+                         <span className="text-[8px] font-black bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20 uppercase tracking-tighter">Sales Captain</span>
                       )}
                       <TierIcon tierId={member.tierId} />
                     </div>
@@ -184,7 +213,12 @@ export default function TeamTab() {
           { label: 'Team Shares', value: '128', sub: 'this week' },
           { 
             label: 'In Good Standing', 
-            value: `${myTeammates.filter(v => Object.values(v.thresholds).every(Boolean)).length} of ${myTeammates.length}`, 
+            value: `${myTeammates.filter(v =>
+                v.thresholds.totalFundraising === true &&
+                v.thresholds.rateBowl === true &&
+                v.thresholds.wishesForTeachers === true &&
+                v.thresholds.totalPoints === true,
+              ).length} of ${myTeammates.length}`, 
             sub: 'Yellow Jackets' 
           },
         ].map((stat) => (

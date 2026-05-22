@@ -52,6 +52,23 @@ export default function Standings() {
   const userStandings = STANDINGS_BY_USER[user.id];
   const [windowChoice, setWindowChoice] = useState<Window>('sprint');
 
+  // Stream C (or its placeholder STANDINGS_BY_USER record) may not have run
+  // for this volunteer. Render a neutral pre-tier placeholder rather than
+  // crashing on `userStandings.levelId` access.
+  if (!userStandings) {
+    return (
+      <div className="space-y-6 pb-12 max-w-4xl">
+        <div className="bg-white border border-border rounded-3xl p-5 shadow-sm">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Standings</p>
+          <h2 className="font-display font-bold text-xl mt-1">Not yet measured</h2>
+          <p className="text-xs text-text-secondary mt-2">
+            Your standings will appear here once Stream C compute runs for your account.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const isPreTier = userStandings.levelId === 0;
   const userTierIndex = isPreTier ? -1 : Math.max(0, Math.min(INCENTIVE_TIERS.length - 1, userStandings.levelId - 1));
   const userLevel: IncentiveTier | undefined = isPreTier ? undefined : INCENTIVE_TIERS[userTierIndex];

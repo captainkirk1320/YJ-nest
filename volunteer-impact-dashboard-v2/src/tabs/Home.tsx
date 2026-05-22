@@ -47,8 +47,14 @@ function daysLeftInPush(): number {
 
 export default function Home({ onViewDonors, onTakeAction, onViewStandings }: HomeProps) {
   const user = VOLUNTEERS.find(v => v.id === CURRENT_USER_ID)!;
-  const metCount = Object.values(user.thresholds).filter(Boolean).length;
-  const inGoodStanding = metCount === 4;
+  // Good Standing only applies to YJ + Future (sop_metrics_and_good_standing.md).
+  // For everyone else thresholds are null and the rule is "not applicable" — we
+  // count only measured thresholds so the UI doesn't say "0 of 4 met" for a
+  // Board member whose thresholds were never computed.
+  const measuredThresholdValues = Object.values(user.thresholds).filter(t => t != null);
+  const allMeasured = measuredThresholdValues.length === 4;
+  const metCount = measuredThresholdValues.filter(t => t === true).length;
+  const inGoodStanding = allMeasured && metCount === 4;
   // v2.1.2: tier comparisons use compositePoints (the unified score), not raw dollars.
   const userPoints = STANDINGS_BY_USER[user.id]?.compositePoints ?? user.metrics.totalPoints;
   const currentTier = user.tierId ? INCENTIVE_TIERS.find(t => t.id === user.tierId) : null;
@@ -122,7 +128,7 @@ export default function Home({ onViewDonors, onTakeAction, onViewStandings }: Ho
               </div>
               <div className="flex items-center justify-between text-[11px] font-bold text-white">
                 <span>{ACTIVE_PUSH.currentShares?.toLocaleString()} / {ACTIVE_PUSH.targetShares.toLocaleString()} shares</span>
-                <span>Your contribution: {user.metrics.currentSprint?.sharesThisSprint ?? 0}</span>
+                <span>Your contribution: {user.metrics.currentSprint?.sharesThisSprint ?? '—'}</span>
               </div>
             </>
           )}
@@ -300,10 +306,14 @@ export default function Home({ onViewDonors, onTakeAction, onViewStandings }: Ho
 
 function WhereYouStand({ user, onViewStandings }: { user: Volunteer; onViewStandings?: () => void }) {
   const myTeam = TEAMS.find(t => t.id === user.teamId);
-  const lastActionDays = daysAgo(user.momentum.lastActionAt);
+  // momentum may be null (Stream C disabled) or lastActionAt may be null
+  // (Stream C ran but found no action). Both render the neutral "—" label
+  // rather than fabricating a date.
+  const lastActionAt = user.momentum?.lastActionAt ?? null;
+  const lastActionDays = lastActionAt ? daysAgo(lastActionAt) : null;
 
-  // "Last action" is a unit conversion (date -> recency), not a qualitative frame
   const lastActionLabel =
+    lastActionDays == null ? '—' :
     lastActionDays === 0 ? 'Today' :
     lastActionDays === 1 ? 'Yesterday' :
     `${lastActionDays} days ago`;
@@ -344,7 +354,9 @@ function WhereYouStand({ user, onViewStandings }: { user: Volunteer; onViewStand
             <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Momentum</p>
           </div>
           <p className="font-display font-bold text-xl leading-none">
-            {user.momentum.activeSprintsLast4}<span className="text-sm text-text-secondary"> of 4</span>
+            {user.momentum != null
+              ? <>{user.momentum.activeSprintsLast4}<span className="text-sm text-text-secondary"> of 4</span></>
+              : <span className="text-text-secondary">—</span>}
           </p>
           <p className="text-[10px] text-text-secondary mt-1">sprints active</p>
         </div>
@@ -355,7 +367,9 @@ function WhereYouStand({ user, onViewStandings }: { user: Volunteer; onViewStand
             <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Last action</p>
           </div>
           <p className="font-display font-bold text-xl leading-none">{lastActionLabel}</p>
-          <p className="text-[10px] text-text-secondary mt-1">{new Date(user.momentum.lastActionAt).toLocaleDateString()}</p>
+          <p className="text-[10px] text-text-secondary mt-1">
+            {lastActionAt ? new Date(lastActionAt).toLocaleDateString() : 'Not yet measured'}
+          </p>
         </div>
       </div>
     </div>

@@ -113,7 +113,7 @@ export default function NudgeModal({ recipient, signalType, onClose }: NudgeModa
           </div>
 
           <div className="p-6 space-y-4">
-            {recipient.signals.signalReason && (
+            {recipient.signals?.signalReason && (
               <div className="bg-surface p-3 rounded-xl border border-border">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary mb-1">Why</p>
                 <p className="text-xs">{recipient.signals.signalReason}</p>

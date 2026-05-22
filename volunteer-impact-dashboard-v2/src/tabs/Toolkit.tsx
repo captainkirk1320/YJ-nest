@@ -149,7 +149,7 @@ export default function ToolkitTab({ initialSearch = '', onClearSearch, onNaviga
     }, 3000);
     
     // Simulate share sheet
-    if (navigator.share) {
+    if (typeof navigator.share === 'function') {
       // navigator.share(...)
     }
   };

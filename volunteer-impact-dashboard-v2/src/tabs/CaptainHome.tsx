@@ -35,14 +35,35 @@ export default function CaptainHome({ onDrillIntoMember }: CaptainHomeProps) {
 
   const teamMembers = VOLUNTEERS.filter(v => v.teamId === captain.teamId && v.id !== captain.id);
 
-  const rising   = useMemo(() => teamMembers.filter(m => m.signals.rising), [teamMembers]);
-  const coasting = useMemo(() => teamMembers.filter(m => m.signals.coasting), [teamMembers]);
-  const atRisk   = useMemo(() => teamMembers.filter(m => m.signals.atRisk), [teamMembers]);
+  // When Stream C signals haven't been computed (m.signals === null) the member
+  // is invisible to every bucket — per sop_v2_frontend_null_guards.md, null is
+  // "not yet measured" rather than "measured and not rising/coasting/atRisk."
+  const rising   = useMemo(() => teamMembers.filter(m => m.signals?.rising   === true), [teamMembers]);
+  const coasting = useMemo(() => teamMembers.filter(m => m.signals?.coasting === true), [teamMembers]);
+  const atRisk   = useMemo(() => teamMembers.filter(m => m.signals?.atRisk   === true), [teamMembers]);
 
   const [nudge, setNudge] = useState<NudgeTarget | null>(null);
 
-  const teamShares = teamMembers.reduce((sum, m) => sum + (m.metrics.currentSprint?.sharesThisSprint ?? 0), 0);
-  const goodStanding = teamMembers.filter(m => Object.values(m.thresholds).every(Boolean)).length;
+  // Aggregate sprint shares only over members whose currentSprint has been
+  // measured. When none have been measured, the header reads
+  // "shares not yet measured" — never a confident-zero. (Codex 2026-05-22 #A3.)
+  const measuredSprintMembers = teamMembers.filter(m => m.metrics.currentSprint != null);
+  const teamShares = measuredSprintMembers.reduce(
+    (sum, m) => sum + (m.metrics.currentSprint?.sharesThisSprint ?? 0),
+    0,
+  );
+  const teamSharesLabel =
+    measuredSprintMembers.length > 0
+      ? `${teamShares} shares this sprint`
+      : 'shares not yet measured';
+  // Good Standing requires all four thresholds === true. When a threshold is
+  // null (Board / Life Member / Life Director) the member is excluded.
+  const goodStanding = teamMembers.filter(m =>
+    m.thresholds.totalFundraising === true &&
+    m.thresholds.rateBowl === true &&
+    m.thresholds.wishesForTeachers === true &&
+    m.thresholds.totalPoints === true,
+  ).length;
 
   return (
     <div className="space-y-6 pb-12 max-w-4xl">
@@ -50,7 +71,7 @@ export default function CaptainHome({ onDrillIntoMember }: CaptainHomeProps) {
         <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Captain Dashboard</p>
         <h1 className="font-display font-bold text-2xl mt-1">{myTeam.name} — Triage</h1>
         <p className="text-xs text-text-secondary mt-1">
-          {teamMembers.length} members · {goodStanding} in Good Standing · {teamShares} shares this sprint
+          {teamMembers.length} members · {goodStanding} in Good Standing · {teamSharesLabel}
         </p>
       </div>
 
@@ -172,7 +193,7 @@ function BucketSection({ title, subtitle, icon, accent, members, signalType, emp
                 <div className="avatar-circle !w-9 !h-9 !text-xs flex-shrink-0">{m.initials}</div>
                 <div className="min-w-0">
                   <p className="text-xs font-bold truncate">{m.name}</p>
-                  <p className="text-[10px] text-text-secondary truncate">{m.signals.signalReason ?? '—'}</p>
+                  <p className="text-[10px] text-text-secondary truncate">{m.signals?.signalReason ?? '—'}</p>
                 </div>
               </button>
               <button

@@ -100,7 +100,7 @@ export default function App() {
       );
       case 'MyTeam':
         // v2: captain-only triage view
-        if (currentUser.role !== 'captain' && currentUser.role !== 'admin') {
+        if (currentUser.role !== 'sales_captain' && currentUser.role !== 'admin') {
           return <HomeTab onViewDonors={() => setShowActivityReport({ show: true, initialTab: 'Contributions' })} onTakeAction={() => setActiveTab('Toolkit')} />;
         }
         return <CaptainHome />;

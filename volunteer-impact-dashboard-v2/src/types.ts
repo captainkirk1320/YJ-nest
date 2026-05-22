@@ -8,7 +8,11 @@
 // See CHANGELOG.md for the full delta vs v1
 // ============================================================
 
-export type VolunteerRole = 'volunteer' | 'captain' | 'admin';
+// v2.1.5 (2026-05-22): role renamed from 'captain' → 'sales_captain' to
+// disambiguate from the points-based "Captain" tier (50,000 pts). The tier
+// keeps its product-facing name; the role moves. See
+// architecture/sop_tier_calculation.md § "Captain tier vs Sales Captain role".
+export type VolunteerRole = 'volunteer' | 'sales_captain' | 'admin';
 
 export type SignalKind = 'rising' | 'coasting' | 'at_risk' | 'good_standing' | 'milestone';
 
@@ -16,21 +20,21 @@ export interface VolunteerSignals {
   rising: boolean;
   coasting: boolean;
   atRisk: boolean;
-  signalReason?: string;
+  signalReason: string | null;
 }
 
 export interface VolunteerMomentum {
   activeSprintsLast4: number;
-  lastActionAt: string;
-  nextMilestoneActions: number;
-  sprintParticipationRate: number;
+  lastActionAt: string | null;
+  nextMilestoneActions: number | null;
+  sprintParticipationRate: number | null;
 }
 
 export interface SprintMetrics {
-  sharesThisSprint: number;
+  sharesThisSprint: number | null;
   fundraisingThisSprint: number;
   pointsThisSprint: number;
-  rank?: number;
+  rank?: number | null;
 }
 
 // v2.1.4: IncentiveTier matches the 2025 "Yellow Jacket Incentives" PDF.
@@ -58,6 +62,13 @@ export interface IncentiveTier {
 
 export type VolunteerCategory = 'Active' | 'Future' | 'Life Member' | 'Life Director';
 
+// v2.1.5 (2026-05-22): every Stream C / v2 extension field is explicitly
+// nullable to match the engine contract. The engine emits genuine `null` when
+// Stream C has not run (Decision 2026-05-20, sop_orchestrator.md § Step 7
+// "Stream C opt-in contract"). Per architecture/sop_v2_frontend_null_guards.md,
+// the frontend renders a neutral fallback for each null surface; sentinels
+// like `false` / `0` are forbidden because they misrepresent "not measured"
+// as "measured and zero/false."
 export interface Volunteer {
   id: string;
   name: string;
@@ -69,32 +80,32 @@ export interface Volunteer {
   rank: number;
   team: string;
   teamId: string;
-  tierId?: string;
-  role: VolunteerRole;
-  volunteerCategory?: VolunteerCategory;  // v2.1.4 — drives Tier 1 threshold (Actives need 17.5k pts / $10k; Futures 15k / $7.5k)
-  signals: VolunteerSignals;
-  momentum: VolunteerMomentum;
+  tierId: string | null;
+  role: VolunteerRole | null;                          // null = Stream C derive_role disabled
+  volunteerCategory?: VolunteerCategory;               // null/undef ⇒ Active default (sop_metrics_and_good_standing.md)
+  signals: VolunteerSignals | null;                    // null ⇒ Stream C compute_signals disabled
+  momentum: VolunteerMomentum | null;                  // null ⇒ Stream C compute_momentum disabled
   thresholds: {
-    totalFundraising: boolean;
-    rateBowl: boolean;
-    wishesForTeachers: boolean;
-    totalPoints: boolean;
+    totalFundraising: boolean | null;
+    rateBowl: boolean | null;
+    wishesForTeachers: boolean | null;
+    totalPoints: boolean | null;
   };
   metrics: {
     totalFundraising: number;
     rateBowl: number;
     wishesForTeachers: number;
     totalPoints: number;
-    currentSprint?: SprintMetrics;
+    currentSprint?: SprintMetrics | null;              // null ⇒ Stream C compute_current_sprint disabled
   };
-  fundraisingPercentile?: number;
-  activityPercentile?: number;
-  // v2.1: Standings / levels
-  levelId?: number;                   // 1..9, per LEVELS
-  compositePoints?: number;           // composite score driving level + ranking
-  rankDelta7d?: number;               // +N = climbed N spots in last 7 days, -N = dropped
-  sprintRank?: number;                // rank within active sprint only
-  weekPoints?: number;                // last 7 days only
+  fundraisingPercentile?: number | null;
+  activityPercentile?: number | null;
+  // v2.1: Standings / levels (deferred Stream — engine emits null for now)
+  levelId?: number | null;
+  compositePoints?: number | null;
+  rankDelta7d?: number | null;
+  sprintRank?: number | null;
+  weekPoints?: number | null;
 }
 
 export interface Team {
