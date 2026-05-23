@@ -1,5 +1,16 @@
 # Progress — YJ-Nest
 
+## 2026-05-22 — Multi-team credit export + multi-dim routing + historical baseline (Conor v2.0 file)
+
+Landed end-to-end support for the production credit-export shape Conor delivered today (`2025-26 Active YJ - 2.0-2026-05-22-11-40-54.xlsx`). One file now covers multiple teams; opportunity-name routing is multi-dimensional (`routing_metrics` array); historical files (date range before SEASON_YEAR) populate `last_year_fundraising_*` on the roster without touching current-season metrics.
+
+**Follow-ups to revisit with Conor (Q7 deferred):**
+- Date-range vs `SEASON_YEAR` validation. Engine currently trusts whatever's in the file. After first production run, define expected windows per cadence (e.g., should we warn if a "current" file spans into next season's calendar year?). Straddling windows are classified solely by `opportunities_date_range.end` — no warning fires today (Codex DIM-2 P2).
+- Confirm whether explicit "ignore"-seed entries should also produce an audit-log entry (today they short-circuit silently per Codex DIM-3 fix; SOP locked but UI/operator visibility could change).
+
+## (historical entries below)
+
+
 ## 2026-05-18 — Protocol 0 Initialization
 - Created `/memory/`, `/architecture/`, `/execution/`, `/.tmp/`
 - Drafted CLAUDE.md skeleton (Constitution + Data Schema placeholders)

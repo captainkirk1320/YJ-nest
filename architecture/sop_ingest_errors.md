@@ -77,7 +77,11 @@ ingest_errors (
 | `roster_row_no_identity` | `parse_master_roster.ts` preflight | Roster row has both `full_contact_id` and `sales_rep_id` null. Row dropped from in-memory roster; spreadsheet row kept for future ID assignment. |
 | `duplicate_full_name` | `parse_master_roster.ts` preflight | Two roster rows share a `full_name`. Defense-in-depth flag — name is not a join key but operator should disambiguate. |
 | `missing_phone` | `parse_master_roster.ts` preflight | Active YJ/Future volunteer has no phone. Twilio OTP login will fail. |
-| `file_team_mismatch` | `parse_volunteer_credit.ts` | Credit file's filename mascot ≠ resolved volunteer's roster team. Credit still flows; flagged. |
+| `file_team_mismatch` | `parse_volunteer_credit.ts` | Resolved volunteer's roster team is not in the credit-export file's `teams_in_filter` set (multi-team-per-file mode, 2026-05-22+). Credit still flows; flagged. |
+| `credit_filter_unreadable` | `parse_volunteer_credit.ts` | Filter rows (team filter, date range) on the credit export couldn't be parsed. Engine falls back to legacy single-team / current-season behavior. |
+| `credit_filter_team_disagreement` | `parse_volunteer_credit.ts` | Row 11 and row 16 team filter lists disagree. Engine takes the union and continues. |
+| `roster_baseline_overridden` | `compute_historical_baseline.ts` | Roster row already carries a non-null `last_year_fundraising_dollars` that disagrees with the historical-baseline computation. Computed value wins. |
+| `multiple_historical_seasons_detected` | `compute_historical_baseline.ts` | More than one prior-season window in a single run. Only the most recent prior season populates `last_year_*`. |
 | `duplicate_staff_rep_id` | `parse_staff_directory.ts` | Two staff allowlist rows share a `Sales Rep ID`. Last write wins; operator should de-dupe the directory file. |
 | `staff_directory_absent` | `parse_staff_directory.ts` | `Sales Staff Directory.xlsx` not present at the configured path. Engine continues with an empty allowlist; every Unify rep not in the roster will emit `unknown_sales_rep_id` until the file is restored. |
 | `exceptions_file_absent` | `parse_exceptions.ts` | `exceptions.txt` not present. Engine continues with zero exceptions. |

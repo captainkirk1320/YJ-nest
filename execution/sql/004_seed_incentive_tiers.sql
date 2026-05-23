@@ -35,10 +35,35 @@ insert into item_patterns (pattern, contributes_to_total_fundraising, contribute
   ('KOE',                  true, false, false, 1.0, 6),
   ('Fiesta Bowl',          true, false, false, 1.0, 7);
 
--- ── Cash routing allowlist (Codex condition 4) ──────────────────────
-insert into volunteer_credit_allowlist (type, opportunity_name_pattern, routing) values
-  ('Cash', 'AI Help', 'dollars')
+-- ── Volunteer credit allowlist — exact opportunity-name routing ─────
+-- Locked 2026-05-22 (Conor v2.0 file). Six real opportunity names with their
+-- multi-dimensional routing_metrics. `type` is set to '*' to indicate the row
+-- applies regardless of left-block Type (Cash / Sponsorship / In-Kind) per
+-- sop_volunteer_credit_routing.md § Routing precedence. The legacy 'Cash'
+-- entries below remain for back-compat but are matched by exact opportunity
+-- name first via the new routing_metrics; the engine prefers routing_metrics
+-- when non-empty regardless of the type column.
+insert into volunteer_credit_allowlist (type, opportunity_name_pattern, routing, routing_metrics) values
+  ('*', '2025 FKE Paddle Raise',               'dollars', '["total_fundraising","total_points"]'::jsonb),
+  ('*', 'Race for Wishes',                     'dollars', '["total_fundraising","wishes_for_teachers","total_points"]'::jsonb),
+  ('*', '2025 Future Dues',                    'dollars', '["total_fundraising","total_points"]'::jsonb),
+  ('*', 'Fiesta Sports Foundation - Donation', 'dollars', '["total_fundraising","total_points"]'::jsonb),
+  ('*', '2025 Par 3 - Silent Auction',         'dollars', '["total_fundraising","total_points"]'::jsonb),
+  ('*', '2025 Par 3 - Prize Donation',         'dollars', '["total_fundraising","total_points"]'::jsonb)
 on conflict (type, opportunity_name_pattern) do nothing;
+
+-- Legacy 2026-05-20 Cash allowlist seed retained for back-compat.
+insert into volunteer_credit_allowlist (type, opportunity_name_pattern, routing, routing_metrics) values
+  ('Cash', 'AI Help', 'dollars', '["total_fundraising","total_points"]'::jsonb)
+on conflict (type, opportunity_name_pattern) do nothing;
+
+-- ── Pattern-based routing rules (substring, case-insensitive) ───────
+-- Applied when no exact volunteer_credit_allowlist row matches. Lowest
+-- sort_order wins among patterns. See sop_volunteer_credit_routing.md.
+insert into volunteer_credit_routing_patterns (pattern, routing_metrics, sort_order) values
+  ('Rate Bowl', '["total_fundraising","rate_bowl","total_points"]'::jsonb,            10),
+  ('Wishes',    '["total_fundraising","wishes_for_teachers","total_points"]'::jsonb, 20)
+on conflict (pattern) do nothing;
 
 -- ── Foundation staff allowlist (current pilot seed) ─────────────────
 insert into staff_rep_ids (sales_rep_id, category, name, source_file_hash) values

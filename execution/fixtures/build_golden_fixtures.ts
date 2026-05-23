@@ -135,12 +135,31 @@ writeFileSync(resolve(INPUTS_DIR, 'Report Data - 2026-05-21T100000.000.csv'), cs
 
 function buildCreditGrid(): unknown[][] {
   const grid: unknown[][] = [];
-  // Rows 1-18: metadata + filter descriptors (ignored by parser).
-  for (let i = 0; i < 17; i++) grid.push([]);
-  grid.push([null, 'Yellow Jacket Team equals Gorlocks']);                                          // row 18
-  grid.push([]);                                                                                    // row 19 separator
-  grid.push([null, 'Contacts with Custom Object', null, null, null, null, 'Contacts with Custom Object']); // row 20
-  grid.push([null, 'Yellow Jacket Credit- Opportunities', null, null, null, null, 'Volunteer Points']); // row 21
+  // Rows 1-18: metadata + filter descriptors. Production shape (per the
+  // 2026-05-22 v2.0 file) carries the team filter on rows 11 + 16 and the
+  // date ranges on rows 9 + 14. We mirror that layout so the parser extracts
+  // the metadata correctly.
+  grid.push([]);                                                                                    // R1
+  grid.push([null, '2026-27 Active YJ - 1.0']);                                                     // R2 (title)
+  grid.push([null, 'As of 2026-05-21 10:00:00 MST']);                                               // R3
+  grid.push([]);                                                                                    // R4
+  grid.push([]);                                                                                    // R5
+  grid.push([null, 'Filtered By']);                                                                  // R6
+  grid.push([null, 'Yellow Jacket Credit- Opportunities']);                                          // R7
+  grid.push([null, 'Show: All accounts']);                                                           // R8
+  grid.push([null, 'Date Field: Opportunity: Close Date equals Custom (1/1/2026 to 12/31/2026)']);   // R9
+  grid.push([null, 'Account Name contains Yellow Jacket']);                                          // R10
+  grid.push([null, 'Yellow Jacket Team equals Gorlocks']);                                           // R11
+  grid.push([null, 'Volunteer Points']);                                                             // R12
+  grid.push([null, 'Show: All accounts']);                                                           // R13
+  grid.push([null, 'Date Field: Planned Start Date & Time equals Custom (1/1/2026 to 12/31/2026)']); // R14
+  grid.push([null, 'Account Name contains Yellow Jacket']);                                          // R15
+  grid.push([null, 'Yellow Jacket Team equals Gorlocks']);                                           // R16
+  grid.push([]);                                                                                    // R17
+  grid.push([null, 'Contacts with Custom Object', null, null, null, null, 'Contacts with Custom Object']); // R18
+  grid.push([null, 'Yellow Jacket Credit- Opportunities', null, null, null, null, 'Volunteer Points']); // R19
+  grid.push([]);                                                                                    // R20 separator
+  grid.push([null, 'Yellow Jacket Credit- Opportunities', null, null, null, null, 'Volunteer Points']); // R21 (block label, duplicate retained to mirror real file's layout)
 
   // Row 22 — header. Layout (column-index based, 0-indexed):
   //   1 Full Contact ID (left)

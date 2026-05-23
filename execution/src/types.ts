@@ -72,6 +72,29 @@ export type UnifyRow = {
 // ─── Volunteer Credit Export ──────────────────────────────────────────────
 // sop_volunteer_credit_routing.md
 
+export type MetricName =
+  | 'total_fundraising'
+  | 'rate_bowl'
+  | 'wishes_for_teachers'
+  | 'total_points';
+
+export const ALL_METRIC_NAMES: ReadonlyArray<MetricName> = [
+  'total_fundraising',
+  'rate_bowl',
+  'wishes_for_teachers',
+  'total_points',
+];
+
+export type CreditFileMetadata = {
+  source_file: string;
+  source_file_fingerprint: string;
+  source_file_timestamp: string;
+  version_label: string | null;
+  teams_in_filter: string[];                          // union of row-11 + row-16
+  opportunities_date_range: { start: string; end: string } | null; // ISO yyyy-mm-dd
+  points_date_range: { start: string; end: string } | null;
+};
+
 export type CreditDollarsRecord = {
   source_file: string;
   source_block: 'opportunities';
@@ -79,12 +102,24 @@ export type CreditDollarsRecord = {
   source_row_hash: string;
   source_file_fingerprint: string; // sha256 of file content
   source_file_timestamp: string; // from filename
+  /**
+   * Filename team mascot — left in place for back-compat with pre-2026-05-22
+   * single-team-per-file fixtures. For multi-team files the value is `''`.
+   * Team scope is now read from `file_metadata.teams_in_filter`.
+   */
   team_mascot_from_filename: string;
+  file_metadata: CreditFileMetadata;
   full_contact_id: string;
   contact_full_name_raw: string;
   opportunity_name: string;
   amount_dollars: number;
   type: 'Cash' | 'Sponsorship' | 'In-Kind' | string;
+  /**
+   * The resolved multi-dimensional routing per
+   * sop_volunteer_credit_routing.md § Routing precedence. compute_metrics
+   * iterates this array and adds the full amount to each named metric.
+   */
+  routing_metrics: MetricName[];
 };
 
 export type CreditPointsRecord = {
@@ -95,6 +130,7 @@ export type CreditPointsRecord = {
   source_file_fingerprint: string;
   source_file_timestamp: string;
   team_mascot_from_filename: string;
+  file_metadata: CreditFileMetadata;
   full_contact_id: string;
   contact_full_name_raw: string;
   volunteer_job_name: string;
@@ -267,6 +303,15 @@ export type VolunteerOutput = {
   is_sales_captain: boolean;
   raised: number; // = metrics.totalFundraising
   goal: number | null;
+  /**
+   * Prior-season display fields populated by compute_historical_baseline.ts
+   * from a historical credit-export file (opportunities_date_range.end <
+   * SEASON_YEAR-01-01). Distinct from current-season metrics — surfaces as
+   * "Last year: $X · rank Y" in the Nest UI. Null when no historical data
+   * exists for this volunteer.
+   */
+  last_year_fundraising_dollars: number | null;
+  last_year_fundraising_rank: number | null;
   metrics: {
     totalFundraising: number;
     rateBowl: number;
@@ -341,6 +386,10 @@ export type IngestErrorKind =
   | 'duplicate_staff_rep_id'
   | 'missing_phone'
   | 'file_team_mismatch'
+  | 'credit_filter_unreadable'
+  | 'credit_filter_team_disagreement'
+  | 'roster_baseline_overridden'
+  | 'multiple_historical_seasons_detected'
   | 'staff_directory_absent'
   | 'exceptions_file_absent';
 

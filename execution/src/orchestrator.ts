@@ -11,7 +11,8 @@
 //   7. Write                                 (sink)
 //   8. Finalize                              (missing_matches CSV)
 
-import { existsSync, readdirSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, writeFileSync, mkdirSync, statSync, readFileSync } from 'node:fs';
+import { read as xlsxRead, utils as xlsxUtils } from 'xlsx';
 import { join, basename, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { IngestErrorCollector } from './ingest_errors.js';
@@ -19,9 +20,18 @@ import { parseMasterRoster, FatalRosterError } from './parse_master_roster.js';
 import { parseStaffDirectory, FatalStaffDirectoryError } from './parse_staff_directory.js';
 import { parseExceptions } from './parse_exceptions.js';
 import { parseUnifyCsv, FatalUnifyCsvError } from './parse_unify_csv.js';
-import { parseVolunteerCredit, FatalCreditExportError, type CashRoutingRule } from './parse_volunteer_credit.js';
+import {
+  parseVolunteerCredit,
+  FatalCreditExportError,
+  type CashRoutingRule,
+  type CreditRoutingPattern,
+} from './parse_volunteer_credit.js';
 import { applyExceptionsAndSplit } from './apply_exceptions.js';
 import { computeMetrics } from './compute_metrics.js';
+import {
+  computeHistoricalBaseline,
+  isHistoricalFile,
+} from './compute_historical_baseline.js';
 import { deriveRole } from './derive_role.js';
 import { computeMomentum } from './compute_momentum.js';
 import { computeCurrentSprint } from './compute_current_sprint.js';
@@ -61,6 +71,15 @@ export type OrchestrateOptions = {
    * only for explicit Unify-only dev runs.
    */
   allowEmptyCredits?: boolean;
+  /** Multi-dimensional opportunity-name pattern rules (substring, case-insensitive). */
+  routingPatterns?: CreditRoutingPattern[];
+  /**
+   * SEASON_YEAR for historical-vs-current classification. Files whose
+   * `opportunities_date_range.end < ${seasonYear}-01-01` route to historical
+   * baseline. Defaults to the SEASON_YEAR env var (parsed as int) or the
+   * current calendar year if unset.
+   */
+  seasonYear?: number;
   sink: IngestSink;
   triggeredBy?: 'cli' | 'cron' | 'manual';
   tmpDir?: string;                             // defaults to {cwd}/.tmp
@@ -79,9 +98,40 @@ export type OrchestrateResult = {
   fatalError: Error | null;
 };
 
+// Pilot seed mirror — keep in sync with execution/sql/004_seed_incentive_tiers.sql.
+// Each entry's routing_metrics array is the source of truth at runtime; the
+// legacy `routing` field is preserved for backward compatibility.
 const DEFAULT_CASH_ALLOWLIST: CashRoutingRule[] = [
-  { type: 'Cash', opportunity_name_pattern: 'AI Help', routing: 'dollars' },
+  { type: 'Cash', opportunity_name_pattern: 'AI Help', routing: 'dollars',
+    routing_metrics: ['total_fundraising', 'total_points'] },
+  { type: '*', opportunity_name_pattern: '2025 FKE Paddle Raise', routing: 'dollars',
+    routing_metrics: ['total_fundraising', 'total_points'] },
+  { type: '*', opportunity_name_pattern: 'Race for Wishes', routing: 'dollars',
+    routing_metrics: ['total_fundraising', 'wishes_for_teachers', 'total_points'] },
+  { type: '*', opportunity_name_pattern: '2025 Future Dues', routing: 'dollars',
+    routing_metrics: ['total_fundraising', 'total_points'] },
+  { type: '*', opportunity_name_pattern: 'Fiesta Sports Foundation - Donation', routing: 'dollars',
+    routing_metrics: ['total_fundraising', 'total_points'] },
+  { type: '*', opportunity_name_pattern: '2025 Par 3 - Silent Auction', routing: 'dollars',
+    routing_metrics: ['total_fundraising', 'total_points'] },
+  { type: '*', opportunity_name_pattern: '2025 Par 3 - Prize Donation', routing: 'dollars',
+    routing_metrics: ['total_fundraising', 'total_points'] },
 ];
+
+const DEFAULT_ROUTING_PATTERNS: CreditRoutingPattern[] = [
+  { pattern: 'Rate Bowl', routing_metrics: ['total_fundraising', 'rate_bowl', 'total_points'], sort_order: 10 },
+  { pattern: 'Wishes',    routing_metrics: ['total_fundraising', 'wishes_for_teachers', 'total_points'], sort_order: 20 },
+];
+
+function resolveSeasonYear(opt?: number): number {
+  if (typeof opt === 'number' && Number.isFinite(opt)) return opt;
+  const env = process.env['SEASON_YEAR'];
+  if (env) {
+    const n = parseInt(env, 10);
+    if (Number.isFinite(n)) return n;
+  }
+  return new Date().getFullYear();
+}
 
 function findLatestUnifyCsv(dir: string): string | null {
   if (!existsSync(dir)) return null;
@@ -93,26 +143,87 @@ function findLatestUnifyCsv(dir: string): string | null {
   return files[0]!.path;
 }
 
-function findVolunteerCreditFiles(dir: string, knownTeamMascots: Set<string>): string[] {
+/**
+ * Sniff the first sheet of an xlsx for the credit-export block-anchor labels.
+ * Returns true iff both `Opportunity: Opportunity Name` AND
+ * `Volunteer Job: Volunteer Job Name` are found on a single row within the
+ * first 60 rows of the first sheet. Used to confirm a candidate file actually
+ * is a credit export before adding it to the ingest set (Codex DIM-8).
+ */
+function looksLikeCreditExport(filePath: string): boolean {
+  try {
+    const buf = readFileSync(filePath);
+    const wb = xlsxRead(buf, { cellDates: true, raw: false, sheets: 0 });
+    const name = wb.SheetNames[0];
+    if (!name) return false;
+    const sheet = wb.Sheets[name];
+    if (!sheet) return false;
+    const grid = xlsxUtils.sheet_to_json<unknown[]>(sheet, {
+      header: 1,
+      defval: null,
+      blankrows: true,
+    });
+    for (let r = 0; r < Math.min(grid.length, 60); r++) {
+      const row = grid[r];
+      if (!row) continue;
+      const cellsLower = row.map((c) => (c == null ? '' : String(c).trim().toLowerCase()));
+      if (
+        cellsLower.includes('opportunity: opportunity name') &&
+        cellsLower.includes('volunteer job: volunteer job name')
+      ) {
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Find Volunteer Credit Export files in a directory.
+ *
+ * 2026-05-22+ multi-team-per-file mode: filenames no longer carry a team
+ * mascot. We accept any `*-YYYY-MM-DD-HH-MM-SS.xlsx` whose first sheet
+ * contains the credit-export block-anchor labels. Legacy single-team fixtures
+ * (`{TeamMascot}-{ts}.xlsx`) still pass via filename hint AND content sniff.
+ */
+function findVolunteerCreditFiles(
+  dir: string,
+  knownTeamMascots: Set<string>,
+  excludeBasenames: Set<string>,
+): string[] {
   if (!existsSync(dir)) return [];
   const ts = /-(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2})\.xlsx$/i;
   const out: string[] = [];
   for (const name of readdirSync(dir)) {
+    if (excludeBasenames.has(name)) continue;
+    if (!ts.test(name)) continue;
+
+    const isMultiTeamProduction = /active yj/i.test(name);
+    let isLegacySingleTeam = false;
     const m = ts.exec(name);
-    if (!m) continue;
-    const beforeTs = name.slice(0, name.length - m[0].length);
-    // Strip optional leading "YYYY-YY " report-cycle prefix.
-    const candidate = beforeTs.replace(/^\d{4}-\d{2}\s+/, '').trim();
-    // Filename must end in a known team mascot. Compare case-insensitively.
-    const candidateLower = candidate.toLowerCase();
-    let matched = false;
-    for (const mascot of knownTeamMascots) {
-      if (candidateLower === mascot.toLowerCase()) {
-        matched = true;
-        break;
+    if (m) {
+      const beforeTs = name.slice(0, name.length - m[0].length);
+      const candidate = beforeTs.replace(/^\d{4}-\d{2}\s+/, '').trim().toLowerCase();
+      for (const mascot of knownTeamMascots) {
+        if (candidate === mascot.toLowerCase()) {
+          isLegacySingleTeam = true;
+          break;
+        }
       }
     }
-    if (matched) out.push(join(dir, name));
+
+    const filenameMatches = isMultiTeamProduction || isLegacySingleTeam;
+    const fullPath = join(dir, name);
+
+    // Content-based confirmation: even when the filename matches, verify the
+    // sheet actually looks like a credit export. This prevents a roster or
+    // unrelated xlsx (that happened to be timestamped) from being passed to
+    // the parser, which would then hard-fail the whole run.
+    if (filenameMatches && looksLikeCreditExport(fullPath)) {
+      out.push(fullPath);
+    }
   }
   return out;
 }
@@ -204,28 +315,72 @@ export async function orchestrate(opts: OrchestrateOptions): Promise<Orchestrate
     for (const r of roster.rows) {
       if (r.team) knownMascots.add(r.team);
     }
-    const creditFiles = findVolunteerCreditFiles(opts.sourceDir, knownMascots);
+    const excludeBasenames = new Set<string>();
+    excludeBasenames.add(basename(opts.rosterPath));
+    excludeBasenames.add(basename(opts.staffDirectoryPath));
+    const creditFiles = findVolunteerCreditFiles(opts.sourceDir, knownMascots, excludeBasenames);
     partialSummary.source_files.credit_xlsxs = creditFiles;
     if (creditFiles.length === 0 && !opts.allowEmptyCredits) {
       throw new FatalCreditExportError(
         `No Volunteer Credit Export files found in ${opts.sourceDir} ` +
-          `(filename pattern: {TeamMascot}-{YYYY-MM-DD-HH-MM-SS}.xlsx, mascot must match the roster). ` +
+          `(expected "*Active YJ*-YYYY-MM-DD-HH-MM-SS.xlsx" or legacy "{TeamMascot}-{ts}.xlsx"). ` +
           `Per sop_orchestrator.md, at least one credit export is required. ` +
           `Pass allowEmptyCredits=true to override for Unify-only dev runs.`,
       );
     }
-    const allCredits: CreditRecord[] = [];
+
+    // Parse each credit file independently. Each parse call also captures
+    // file-level metadata (teams_in_filter + date ranges). We then split the
+    // records into current-season vs historical-baseline streams using
+    // SEASON_YEAR.
+    const seasonYear = resolveSeasonYear(opts.seasonYear);
+    log('info', 'season_year:resolved', { seasonYear });
+    const currentSeasonCredits: CreditRecord[] = [];
+    const historicalCredits: CreditRecord[] = [];
     for (const path of creditFiles) {
       log('info', 'ingest:credit', { path });
-      const records = parseVolunteerCredit({
+      const { records, metadata } = parseVolunteerCredit({
         creditPath: path,
         roster,
         cashRoutingAllowlist: cashAllowlist,
+        routingPatterns: opts.routingPatterns ?? DEFAULT_ROUTING_PATTERNS,
         errors,
       });
-      for (const r of records) allCredits.push(r);
+      const historical = isHistoricalFile({
+        opportunitiesDateRangeEnd: metadata.opportunities_date_range?.end ?? null,
+        seasonYear,
+      });
+      log('info', 'credit:file_classified', {
+        path,
+        classification: historical ? 'historical' : 'current',
+        opportunities_date_range_end: metadata.opportunities_date_range?.end ?? null,
+        teams_in_filter: metadata.teams_in_filter,
+      });
+      const target = historical ? historicalCredits : currentSeasonCredits;
+      for (const r of records) target.push(r);
     }
-    log('info', 'credit:loaded', { files: creditFiles.length, records: allCredits.length });
+    log('info', 'credit:loaded', {
+      files: creditFiles.length,
+      current_season_records: currentSeasonCredits.length,
+      historical_records: historicalCredits.length,
+    });
+
+    // ─── Step 3b — Historical baseline ─────────────────────────────────
+    // Populates RosterRow.last_year_fundraising_dollars + rank BEFORE
+    // compute_metrics builds VolunteerOutput so the values flow into the
+    // downstream sink. Historical credits do NOT enter computeMetrics.
+    if (historicalCredits.length > 0) {
+      log('info', 'historical_baseline:start', { records: historicalCredits.length });
+      const result = computeHistoricalBaseline({
+        creditRecords: historicalCredits,
+        roster,
+        errors,
+      });
+      log('info', 'historical_baseline:done', {
+        volunteers_populated: result.appliedByFcid.size,
+      });
+    }
+    const allCredits: CreditRecord[] = currentSeasonCredits;
 
     // ─── Step 4+5 — Multi-rep split + SPLIT exceptions ───────────────
     const allocations = applyExceptionsAndSplit({

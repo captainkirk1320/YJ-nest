@@ -31,7 +31,12 @@ Define the end-to-end sequence in which atomic scripts run during a single inges
 │ 3. INGEST SOURCE FILES                                       │
 │   - parse_unify_csv.ts → UnifyRow[]                          │
 │   - parse_volunteer_credit.ts → CreditRecord[]               │
-│     (iterates over all {TeamMascot}-*.xlsx in shared dir)    │
+│     (iterates over credit-export xlsx files in shared dir;   │
+│      multi-team-per-file model — see § Source-file discovery)│
+│   - compute_historical_baseline.ts splits historical files   │
+│     out of the current-season stream and produces a          │
+│     last-year-dollars / last-year-rank map merged into       │
+│     RosterRow before compute_metrics runs.                   │
 └──────────────────────────────────────────────────────────────┘
                             │
                             ▼
@@ -114,31 +119,35 @@ The remaining v2 fields (`levelId`, `compositePoints`, `rankDelta7d`, `sprintRan
 | Layer | Dedup key | Why this works |
 |---|---|---|
 | Unify rows | `(source_file, source_row_hash)` | Same CSV row = same hash. Re-ingesting the same file produces the same set of normalized records. |
-| SF credit rows | `(full_contact_id, source_block, normalized_opportunity_or_job_name, amount, source_file_fingerprint+timestamp)` | Codex condition (c). Re-ingesting same file → same key. Different export timestamp = new batch, supersedes prior. |
+| SF credit rows | `(full_contact_id, source_block, normalized_opportunity_or_job_name, amount, source_file_fingerprint+timestamp)` | Codex condition (c). Re-ingesting same file → same key. Different export timestamp = new batch, supersedes prior. Multi-team-per-file ingest (2026-05-22) leaves the row-level key unchanged — supersession partitions by `source_file_timestamp` globally, not per team. |
 | Exceptions | `(exceptions.txt sha256, exception.id)` | If file content unchanged, no upsert. If changed, full re-sync of the `exceptions` table for that file's content hash. |
 | Volunteers / Teams | full row upsert keyed by `full_contact_id` / team slug | Deterministic outputs from deterministic inputs. Re-run = same row contents. |
 | `ingest_errors` | `(ingest_run_id, kind, source_file, source_row_hash, full_contact_id)` | One row per (run, error). Different runs = different rows; same run, same problem = single row. |
 
 ### Superseding batches
 
-When a credit-export file shows up with a NEWER `{timestamp}` for the same `{TeamMascot}` than a previously-ingested file:
+When a credit-export file shows up with a NEWER `{timestamp}` than a previously-ingested file (multi-team-per-file mode, 2026-05-22):
 
 1. Engine ingests the new file.
-2. Records from the OLD file's batch for that team are NOT auto-deleted — they remain in the `contributions` table tagged with their `source_file_fingerprint`.
-3. compute_metrics excludes superseded batches: for each `(full_contact_id, team)`, the latest file timestamp wins; older batch contributions are filtered out at aggregation time.
+2. Records from the OLD file's batch are NOT auto-deleted — they remain in the `contributions` table tagged with their `source_file_fingerprint`.
+3. compute_metrics excludes superseded batches **globally**: the latest `source_file_timestamp` across ALL current-season credit files wins (multi-team and legacy alike); older batches are filtered out at aggregation time. There is no per-team partitioning under the multi-team model — Codex DIM-6 lockdown 2026-05-22.
+
+Historical-baseline files (see `sop_historical_baseline_ingest.md`) are routed out of this stream before the supersede filter runs. They have their own per-prior-season-window supersession — within a given prior-season year window, latest `source_file_timestamp` wins; older historical batches for the same year are dropped.
 
 This means amendments don't double-count and old data isn't silently destroyed.
 
-### Same-timestamp ties (Codex F4, added 2026-05-22)
+### Same-timestamp ties (Codex F4, added 2026-05-22; logic retained in multi-team mode)
 
-If two distinct credit-export files for the SAME team mascot share the latest `{timestamp}`, the engine cannot deterministically pick a winner. Behavior:
+If two distinct credit-export files share the latest `{timestamp}` with different fingerprints, the engine cannot deterministically pick a winner. Behavior:
 
-1. `compute_metrics.filterToLatestCreditBatchPerTeam` detects the tie by counting distinct `source_file_fingerprint` values for `(team_mascot, latest_timestamp)`.
-2. **Both batches are dropped** for that team — no records flow through to aggregation. The team's SF credit subtotals stay at zero for the run.
+1. `compute_metrics.filterToLatestCreditBatch` detects the tie by counting distinct `source_file_fingerprint` values for the latest `source_file_timestamp`.
+2. **Both batches are dropped** — no records flow through to aggregation. SF credit subtotals stay at zero for the run.
 3. A single `ambiguous_credit_batch_timestamp` `ingest_errors` row is emitted with `detail.source_files` listing the offending filenames.
 4. Operator resolves by deleting one file or amending its filename timestamp, then re-running.
 
-Rationale: the SOP defines no tie-break semantics, and silently keeping both files would double-count credit. Fail-closed-with-warning preserves correctness without halting the run for other teams.
+> **Single-file caveat (2026-05-22):** Under Conor's current single-file delivery cadence, same-timestamp ties are unlikely (a second file would require Conor to manually re-export and rename simultaneously). The tie-detection logic remains active as a defensive guard. If pilot operations confirm a steady single-file cadence, the tie check is essentially dormant — but harmless.
+
+Rationale: the SOP defines no tie-break semantics, and silently keeping both files would double-count credit. Fail-closed-with-warning preserves correctness without halting the run.
 
 ## Partial-failure handling
 
@@ -161,10 +170,25 @@ Files the orchestrator expects:
 | `Report Data - *.csv` | yes | Latest-by-filename Unify export. Older files in the same directory are ignored. |
 | `26-27 Full Roster.xlsx` (pilot) / future single-sheet `Master Volunteer Roster.xlsx` | yes | Latest by mtime. |
 | `Sales Staff Directory.xlsx` (project root, not Process Documentation) | no | Foundation sales staff allowlist. If absent, run with empty allowlist (every non-roster ID emits `unknown_sales_rep_id` warning). |
-| `*-*.xlsx` matching `{TeamMascot}-{timestamp}.xlsx` | yes (≥ 1) | All teams. Filenames are pattern-matched against known team mascots (loaded from Supabase `teams` table). |
+| `*-YYYY-MM-DD-HH-MM-SS.xlsx` Volunteer Credit Export files (multi-team per file, 2026-05-22+) | yes (≥ 1) | Identified by filename ending in `-YYYY-MM-DD-HH-MM-SS.xlsx` AND first-sheet content containing both block-anchor labels (`Opportunity: Opportunity Name`, `Volunteer Job: Volunteer Job Name`) on the same header row. Team mascot is NOT parsed from filename — team scope is read from inside the file's filter-descriptor rows. See `sop_volunteer_credit_routing.md` § File-level metadata. The orchestrator inspects each candidate file's first sheet to confirm it is a credit export (not e.g. a roster or unrelated xlsx in the same directory). |
 | `exceptions.txt` | no | If absent, run with zero exceptions. Logged as a warning. |
 
 Post-pilot: discovery swaps from local directory to SharePoint Graph API via the `ReportSource` interface (CLAUDE.md §3 / decisions.md).
+
+## Historical-baseline routing (added 2026-05-22)
+
+After Step 3 ingest, every Volunteer Credit Export's `opportunities_date_range` is inspected. The orchestrator partitions the credit-file set into two streams:
+
+| Stream | Detection rule | Destination |
+|---|---|---|
+| **Current-season** | `opportunities_date_range.end` falls on or after `SEASON_YEAR-01-01` (or date range is null/unparseable) | Step 6 `compute_metrics` (legacy path) |
+| **Historical-baseline** | `opportunities_date_range.end` is strictly before `SEASON_YEAR-01-01` | `compute_historical_baseline.ts` — populates `RosterRow.last_year_fundraising_dollars` + `last_year_fundraising_rank` only |
+
+`SEASON_YEAR` defaults to the current calendar year and is overridable via the `SEASON_YEAR` env var (e.g. `SEASON_YEAR=2026` for the 2026-27 Fiesta Bowl season).
+
+Historical-baseline data does NOT merge into `metrics.totalFundraising` and does NOT trigger tier/Good Standing/rank recomputation. The current snapshot is for prior-season display in the Nest UI (e.g., "Last year: $25,000 · rank 14"). See `sop_historical_baseline_ingest.md`.
+
+> **Pilot deferral (Q7):** Date-range vs `SEASON_YEAR` validation (warning the operator when a file's filter window doesn't match expectations) is deferred. For pilot, the engine trusts whatever's in the file. Follow-up: revisit with Conor after first production run to define expected windows per cadence.
 
 ## Triggering modes
 

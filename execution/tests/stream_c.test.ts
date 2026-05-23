@@ -100,6 +100,8 @@ function mkVolunteer(args: {
     is_sales_captain: args.is_sales_captain ?? false,
     raised: 0,
     goal: null,
+    last_year_fundraising_dollars: null,
+    last_year_fundraising_rank: null,
     metrics: { totalFundraising: 0, rateBowl: 0, wishesForTeachers: 0, totalPoints: 0 },
     thresholds: args.thresholds_all_met
       ? { totalFundraising: true, rateBowl: true, wishesForTeachers: true, totalPoints: true }
@@ -140,19 +142,31 @@ function mkOppCredit(args: {
   timestamp: string;
   filename?: string;
 }): CreditRecord {
+  const sf = args.filename ?? `Gorlocks-${args.timestamp.replace(/[-:T.Z]/g, '').slice(0, 14)}.xlsx`;
+  const fp = `fp-${args.full_contact_id}-${args.timestamp}`;
   return {
-    source_file: args.filename ?? `Gorlocks-${args.timestamp.replace(/[-:T.Z]/g, '').slice(0, 14)}.xlsx`,
+    source_file: sf,
     source_block: 'opportunities',
     source_row_number: 1,
     source_row_hash: `h-${args.full_contact_id}-${args.timestamp}`,
-    source_file_fingerprint: `fp-${args.full_contact_id}-${args.timestamp}`,
+    source_file_fingerprint: fp,
     source_file_timestamp: args.timestamp,
     team_mascot_from_filename: 'Gorlocks',
+    file_metadata: {
+      source_file: sf,
+      source_file_fingerprint: fp,
+      source_file_timestamp: args.timestamp,
+      version_label: null,
+      teams_in_filter: ['Gorlocks'],
+      opportunities_date_range: null,
+      points_date_range: null,
+    },
     full_contact_id: args.full_contact_id,
     contact_full_name_raw: args.full_contact_id,
     opportunity_name: 'Test Donation',
     amount_dollars: args.amount_dollars,
     type: 'Cash',
+    routing_metrics: ['total_fundraising', 'total_points'],
   };
 }
 

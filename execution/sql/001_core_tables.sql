@@ -38,12 +38,44 @@ create index if not exists item_patterns_sort_idx on item_patterns(sort_order);
 
 create table if not exists volunteer_credit_allowlist (
   id                          uuid primary key default gen_random_uuid(),
-  type                        text not null,                              -- e.g. 'Cash'
+  type                        text not null,                              -- e.g. 'Cash' (kept for back-compat; legacy seeds keyed by type)
   opportunity_name_pattern    text not null,                              -- exact match (case-insensitive)
-  routing                     text not null check (routing in ('dollars', 'ignore')),
+  -- DEPRECATED 2026-05-22: replaced by routing_metrics. Kept for backward
+  -- compatibility — engine prefers routing_metrics when non-empty.
+  routing                     text not null default 'dollars' check (routing in ('dollars', 'ignore')),
+  -- Multi-dimensional routing (locked 2026-05-22). Each entry names a metric
+  -- dimension that receives the full amount_dollars. Empty array means fall
+  -- back to legacy `routing` semantics.
+  routing_metrics             jsonb not null default '[]'::jsonb,
   created_at                  timestamptz not null default now(),
-  unique (type, opportunity_name_pattern)
+  unique (type, opportunity_name_pattern),
+  check (jsonb_typeof(routing_metrics) = 'array')
+  -- Element-level enum validation is enforced in app code (parser's
+  -- sanitizeRoutingMetrics + types.MetricName). PostgreSQL CHECK constraints
+  -- cannot contain subqueries, so per-element validation lives outside the
+  -- column definition. A future migration could swap in an IMMUTABLE helper
+  -- function if DB-side enforcement becomes a hard requirement.
 );
+-- For existing deployments that pre-date 2026-05-22, ensure the column exists
+-- without forcing a destructive recreate.
+alter table volunteer_credit_allowlist
+  add column if not exists routing_metrics jsonb not null default '[]'::jsonb;
+
+-- Multi-dimensional routing pattern rules (added 2026-05-22). Pattern is a
+-- case-insensitive substring match against Opportunity: Opportunity Name.
+-- Exact entries in volunteer_credit_allowlist take precedence; among patterns,
+-- lowest sort_order wins.
+create table if not exists volunteer_credit_routing_patterns (
+  id                          uuid primary key default gen_random_uuid(),
+  pattern                     text not null,                              -- substring (case-insensitive)
+  routing_metrics             jsonb not null,
+  sort_order                  integer not null,
+  created_at                  timestamptz not null default now(),
+  unique (pattern),
+  check (jsonb_typeof(routing_metrics) = 'array' and jsonb_array_length(routing_metrics) > 0)
+  -- Per-element enum validation is enforced in app code (see note above).
+);
+create index if not exists vcrp_sort_idx on volunteer_credit_routing_patterns(sort_order);
 
 create table if not exists staff_rep_ids (
   sales_rep_id        integer primary key,
@@ -122,12 +154,19 @@ create table if not exists volunteers (
   is_sales_captain    boolean not null default false,
   raised              numeric(12, 2) not null default 0,
   goal                numeric(12, 2),
+  -- Prior-season display fields populated by compute_historical_baseline.ts
+  -- when a historical credit-export file is detected. Distinct from current-season metrics.
+  last_year_fundraising_dollars numeric(12, 2),
+  last_year_fundraising_rank    integer,
   metrics             jsonb not null default '{}'::jsonb,                 -- { totalFundraising, rateBowl, wishesForTeachers, totalPoints }
   thresholds          jsonb not null default '{}'::jsonb,                 -- { totalFundraising: bool|null, ... }
   tier_id             text references incentive_tiers(id),
   rank                integer,
   updated_at          timestamptz not null default now()
 );
+-- Migration safety for pre-2026-05-22 deployments.
+alter table volunteers add column if not exists last_year_fundraising_dollars numeric(12, 2);
+alter table volunteers add column if not exists last_year_fundraising_rank integer;
 
 create index if not exists volunteers_team_idx on volunteers(team_id);
 create index if not exists volunteers_has_access_idx on volunteers(has_nest_access);

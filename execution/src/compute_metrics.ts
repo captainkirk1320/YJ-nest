@@ -154,80 +154,69 @@ export type ComputeMetricsResult = {
 };
 
 /**
- * When multiple credit-export files exist for the same team mascot, keep only
- * the records from the file with the latest export timestamp. Per
- * sop_orchestrator.md § Superseding batches: amended exports supersede prior
- * batches. Without this filter, re-running ingest after Conor uploads a
- * corrected export would double-count the team's credit.
+ * Filter credit records to the latest source_file_timestamp batch.
+ *
+ * 2026-05-22 multi-team-per-file update: supersession is GLOBAL across all
+ * current-season credit records. The latest `source_file_timestamp` wins;
+ * older batches are silently dropped. This holds whether the run contains
+ * one production multi-team file, several legacy single-team fixtures, or a
+ * mix (Codex DIM-6 — mixed runs must not double-count overlapping volunteers).
+ *
+ * Same-timestamp ties (Codex F4): if two distinct source files share the
+ * latest `source_file_timestamp` with different fingerprints, BOTH batches
+ * are dropped and an `ambiguous_credit_batch_timestamp` warning is emitted.
+ * The tie-detection logic is retained as a defensive guard under single-file
+ * delivery — ties are unlikely but not impossible.
+ *
+ * Historical-baseline credits MUST be filtered out BEFORE this function runs —
+ * they live on a separate track with their own per-prior-season supersession.
+ * See sop_historical_baseline_ingest.md.
  */
-function filterToLatestCreditBatchPerTeam(
+export function filterToLatestCreditBatch(
   creditRecords: CreditRecord[],
   errors: IngestErrorCollector,
 ): CreditRecord[] {
-  const latestByTeam = new Map<string, string>(); // team_mascot → latest timestamp
+  if (creditRecords.length === 0) return creditRecords;
+
+  let latestTs = '';
   for (const r of creditRecords) {
-    const team = r.team_mascot_from_filename;
-    const ts = r.source_file_timestamp;
-    const prior = latestByTeam.get(team);
-    if (!prior || ts > prior) latestByTeam.set(team, ts);
+    if (r.source_file_timestamp > latestTs) latestTs = r.source_file_timestamp;
   }
 
-  // Codex F4: same-timestamp tie detection. If two distinct source files share
-  // the latest timestamp for the same team, the SOP defines no tie-break
-  // semantics — silently keeping both would double-count credit. Fail closed
-  // by dropping all records for that (team, timestamp) and emitting an error.
-  const teamsWithTies = new Set<string>();
-  const fingerprintsByTeamTs = new Map<string, Set<string>>(); // `${team}::${ts}` → set of fingerprints
+  const fingerprintsAtLatest = new Set<string>();
   for (const r of creditRecords) {
-    if (r.source_file_timestamp !== latestByTeam.get(r.team_mascot_from_filename)) continue;
-    const key = `${r.team_mascot_from_filename}::${r.source_file_timestamp}`;
-    let fps = fingerprintsByTeamTs.get(key);
-    if (!fps) {
-      fps = new Set();
-      fingerprintsByTeamTs.set(key, fps);
-    }
-    fps.add(r.source_file_fingerprint);
+    if (r.source_file_timestamp === latestTs) fingerprintsAtLatest.add(r.source_file_fingerprint);
   }
-  for (const [key, fps] of fingerprintsByTeamTs.entries()) {
-    if (fps.size > 1) {
-      const [team, ts] = key.split('::');
-      teamsWithTies.add(team!);
-      const offendingFiles = Array.from(
-        new Set(
-          creditRecords
-            .filter(
-              (r) =>
-                r.team_mascot_from_filename === team && r.source_file_timestamp === ts,
-            )
-            .map((r) => r.source_file),
-        ),
-      );
-      errors.add({
-        kind: 'ambiguous_credit_batch_timestamp',
-        detail: {
-          team_mascot: team,
-          timestamp: ts,
-          source_files: offendingFiles,
-          reason:
-            'Two distinct credit-export files share the latest timestamp for this team. ' +
-            'Resolve by deleting one or amending its filename timestamp before re-running.',
-        },
-      });
-    }
+  if (fingerprintsAtLatest.size > 1) {
+    const offendingFiles = Array.from(
+      new Set(
+        creditRecords
+          .filter((r) => r.source_file_timestamp === latestTs)
+          .map((r) => r.source_file),
+      ),
+    );
+    errors.add({
+      kind: 'ambiguous_credit_batch_timestamp',
+      detail: {
+        timestamp: latestTs,
+        source_files: offendingFiles,
+        reason:
+          'Two distinct credit-export files share the latest timestamp. ' +
+          'Resolve by deleting one or amending its filename timestamp before re-running.',
+      },
+    });
+    return []; // drop both batches; no current-season SF credit this run
   }
 
-  // Per sop_orchestrator.md § Superseding batches: silently drop older batches
-  // for the same team when a newer export is present. This is an idempotency
-  // mechanic, not a data-quality flag, so no warning is emitted for the drop.
-  return creditRecords.filter((r) => {
-    if (teamsWithTies.has(r.team_mascot_from_filename)) return false;
-    return r.source_file_timestamp === latestByTeam.get(r.team_mascot_from_filename);
-  });
+  return creditRecords.filter((r) => r.source_file_timestamp === latestTs);
 }
+
+// Legacy alias retained for code that imported the prior name.
+export const filterToLatestCreditBatchPerTeam = filterToLatestCreditBatch;
 
 export function computeMetrics(opts: ComputeMetricsOptions): ComputeMetricsResult {
   const { unifyAllocations, exceptions, roster, errors } = opts;
-  const creditRecords = filterToLatestCreditBatchPerTeam(opts.creditRecords, errors);
+  const creditRecords = filterToLatestCreditBatch(opts.creditRecords, errors);
   const itemPatterns = opts.itemPatterns ?? DEFAULT_ITEM_PATTERNS;
 
   // Build accumulator keyed by volunteer synthetic id.
@@ -276,16 +265,41 @@ export function computeMetrics(opts: ComputeMetricsOptions): ComputeMetricsResul
   }
 
   // Phase 1b — SF credit records.
-  // Left block (opportunities) → totalFundraising + points (via 1.0 multiplier).
-  // Right block (volunteer points) → totalPoints only.
+  // Left block (opportunities): iterate routing_metrics; each named dim gets
+  // the full amount (additive, not split) per
+  // sop_volunteer_credit_routing.md § Routing precedence.
+  // Right block (volunteer points): totalPoints only.
+  // Defensive: track which (volunteer, source_row_hash) we've already routed,
+  // so a row is never double-credited within a single run even if duplicate
+  // records leak through dedup upstream.
+  const seenLeftRows = new Set<string>();
   for (const credit of creditRecords) {
     const row = roster.by_full_contact_id.get(credit.full_contact_id);
-    if (!row) continue; // Validated at parse time; defensive skip.
+    if (!row) continue;
     const id = syntheticId(row);
     const acc = ensureAcc(id);
     if (credit.source_block === 'opportunities') {
-      acc.totalFundraising += credit.amount_dollars;
-      acc.totalPoints += credit.amount_dollars * 1.0; // multiplier for SF cash-like dollars
+      // Include source_row_number so two legitimate identical rows on the same
+      // sheet are NOT collapsed (Codex DIM-1). source_row_hash hashes the
+      // semantic content; the row number distinguishes the physical sheet rows.
+      const key = `${id}::${credit.source_row_number}::${credit.source_row_hash}::${credit.source_file_fingerprint}`;
+      if (seenLeftRows.has(key)) continue;
+      seenLeftRows.add(key);
+      const routes = Array.isArray(credit.routing_metrics) ? credit.routing_metrics : [];
+      // Each routed metric receives the full amount once. Iterate a Set so
+      // an accidentally-duplicated entry in routing_metrics (e.g. data drift
+      // in seed SQL) doesn't double-count within the same row.
+      const seenMetric = new Set<string>();
+      for (const m of routes) {
+        if (seenMetric.has(m)) continue;
+        seenMetric.add(m);
+        switch (m) {
+          case 'total_fundraising': acc.totalFundraising  += credit.amount_dollars; break;
+          case 'rate_bowl':         acc.rateBowl           += credit.amount_dollars; break;
+          case 'wishes_for_teachers': acc.wishesForTeachers += credit.amount_dollars; break;
+          case 'total_points':      acc.totalPoints        += credit.amount_dollars * 1.0; break;
+        }
+      }
     } else {
       acc.totalPoints += credit.amount_points;
     }
@@ -355,6 +369,8 @@ export function computeMetrics(opts: ComputeMetricsOptions): ComputeMetricsResul
       is_sales_captain: row.is_sales_captain,
       raised: round2(acc.totalFundraising),
       goal: isYjOrFuture ? 10_000 : null,
+      last_year_fundraising_dollars: row.last_year_fundraising_dollars,
+      last_year_fundraising_rank: row.last_year_fundraising_rank,
       metrics: {
         totalFundraising: round2(acc.totalFundraising),
         rateBowl: round2(acc.rateBowl),
@@ -398,6 +414,8 @@ export function computeMetrics(opts: ComputeMetricsOptions): ComputeMetricsResul
       is_sales_captain: false,
       raised: round2(ouAcc.totalFundraising),
       goal: null,
+      last_year_fundraising_dollars: null,
+      last_year_fundraising_rank: null,
       metrics: {
         totalFundraising: round2(ouAcc.totalFundraising),
         rateBowl: round2(ouAcc.rateBowl),

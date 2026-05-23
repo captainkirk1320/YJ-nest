@@ -33,6 +33,10 @@ const WARNING_KINDS = new Set<IngestErrorKind>([
   'duplicate_staff_rep_id',
   'missing_phone',
   'file_team_mismatch',
+  'credit_filter_unreadable',
+  'credit_filter_team_disagreement',
+  'roster_baseline_overridden',
+  'multiple_historical_seasons_detected',
   'staff_directory_absent',
   'exceptions_file_absent',
 ]);

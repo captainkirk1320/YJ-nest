@@ -13,18 +13,20 @@ Combine all routed contributions (Unify-derived + Salesforce credit-derived) per
 ## Input streams
 
 1. **Unify-derived contributions** (post-split, post-categorization) from `sop_item_categorization.md`.
-2. **SF credit-derived dollar contributions** from `sop_volunteer_credit_routing.md` (left block).
-3. **SF credit-derived points contributions** from `sop_volunteer_credit_routing.md` (right block).
+2. **SF credit-derived dollar contributions** from `sop_volunteer_credit_routing.md` (left block). Multi-dimensional: each contribution names an array of metric dimensions to credit (e.g. a `Race for Wishes` row credits `total_fundraising` + `wishes_for_teachers` + `total_points`).
+3. **SF credit-derived points contributions** from `sop_volunteer_credit_routing.md` (right block). Always `[total_points]` only.
 4. **ADJUST exceptions** from `sop_exceptions_format.md`.
+
+> **Historical-baseline credits do NOT feed this aggregator.** Files whose `opportunities_date_range` predates the current season window are routed to `compute_historical_baseline.ts` which populates `RosterRow.last_year_fundraising_dollars` + `last_year_fundraising_rank` only. They never touch `metrics.totalFundraising` and never trigger tier / Good Standing / rank recomputation. See `sop_historical_baseline_ingest.md`.
 
 ## The 4 metric dimensions
 
 | Dimension | Unit | Formula |
 |---|---|---|
-| `totalFundraising` | dollars | Σ Unify rows' dollars (per item-categorization rules) + Σ left-block SF credit dollars |
-| `rateBowl` | dollars | Σ Unify rows' dollars where item matches `Rate Bowl` patterns |
-| `wishesForTeachers` | dollars | Σ Unify rows' dollars where item matches `Wishes for Teachers` |
-| `totalPoints` | points | Σ (Unify row dollars × points_multiplier) + Σ left-block SF credit dollars × points_multiplier + Σ right-block SF credit points |
+| `totalFundraising` | dollars | Σ Unify rows' dollars (per item-categorization rules) + Σ left-block SF credit dollars whose `routing_metrics` includes `total_fundraising` |
+| `rateBowl` | dollars | Σ Unify rows' dollars where item matches `Rate Bowl` patterns + Σ left-block SF credit dollars whose `routing_metrics` includes `rate_bowl` |
+| `wishesForTeachers` | dollars | Σ Unify rows' dollars where item matches `Wishes for Teachers` + Σ left-block SF credit dollars whose `routing_metrics` includes `wishes_for_teachers` |
+| `totalPoints` | points | Σ (Unify row dollars × points_multiplier) + Σ left-block SF credit dollars whose `routing_metrics` includes `total_points` × points_multiplier + Σ right-block SF credit points |
 
 ### Important unit details
 
@@ -54,8 +56,13 @@ For each volunteer V (keyed by full_contact_id):
       metrics.wishesForTeachers  += C.contribution_dollars.wishes_for_teachers
       metrics.totalPoints        += C.contribution_points
     elif C from SF left block:
-      metrics.totalFundraising  += C.amount_dollars
-      metrics.totalPoints        += C.amount_dollars × points_multiplier
+      # routing_metrics is a multi-dim array per sop_volunteer_credit_routing.md.
+      # Each named metric receives the FULL amount (additive, not split).
+      for m in C.routing_metrics:
+        if m == 'total_fundraising':   metrics.totalFundraising  += C.amount_dollars
+        elif m == 'rate_bowl':         metrics.rateBowl           += C.amount_dollars
+        elif m == 'wishes_for_teachers': metrics.wishesForTeachers += C.amount_dollars
+        elif m == 'total_points':      metrics.totalPoints        += C.amount_dollars × points_multiplier
     elif C from SF right block:
       metrics.totalPoints        += C.amount_points
 
@@ -229,9 +236,22 @@ A single pseudo-volunteer row exists in `volunteers` with `id = 'org_uncredited'
 
 It's lazily created on first hit and updated idempotently. All filters that drive Nest UI surfaces (`has_nest_access = true`, team rollups, leaderboards) exclude it. Only the org-wide sum reaches it.
 
+## Historical baseline display fields (added 2026-05-22)
+
+`RosterRow.last_year_fundraising_dollars` and `RosterRow.last_year_fundraising_rank` are display-only fields surfaced on the volunteer's Nest profile ("YJ since 2021 · Last year: $25,000 · rank 14"). They are populated by `compute_historical_baseline.ts` from credit-export files whose `opportunities_date_range` predates the current season window.
+
+**Critical separations:**
+- The historical baseline NEVER flows into `metrics.totalFundraising`. Last-year dollars are display-only, not current-season metric input.
+- The historical baseline NEVER affects tier assignment, Good Standing, or current-season rank.
+- If a roster row arrives from `parse_master_roster.ts` with non-null `last_year_fundraising_dollars` (carried in the source xlsx as the legacy "25-26 Dollars" column), and the historical-baseline computation produces a different value, the historical-baseline value wins (it's computed from the canonical source-of-truth credit export). A `roster_baseline_overridden` ingest warning is emitted for diagnostic visibility.
+- The historical rank is computed across the union of `full_contact_id` values seen in the historical credit-export file's opportunities block. It does NOT include current-season Unify rows.
+
+Detection and computation rules live in `sop_historical_baseline_ingest.md`.
+
 ## What this SOP does NOT cover
 
 - Tier ladder + tier assignment → `sop_tier_calculation.md`
 - v2 signals / momentum / sprint metrics → Stream C, deferred
 - Writing to Supabase → handled by `write_supabase.ts` (idempotent upsert)
 - Ingest error semantics → `sop_ingest_errors.md`
+- Historical baseline detection + rank computation → `sop_historical_baseline_ingest.md`

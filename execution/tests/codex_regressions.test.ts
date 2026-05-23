@@ -135,11 +135,21 @@ describe('Codex P1 — superseding credit-export batches per team', () => {
       source_file_fingerprint: 'oldfp',
       source_file_timestamp: '2026-05-01-10-00-00',
       team_mascot_from_filename: 'Gorlocks',
+      file_metadata: {
+        source_file: 'Gorlocks-2026-05-01-10-00-00.xlsx',
+        source_file_fingerprint: 'oldfp',
+        source_file_timestamp: '2026-05-01-10-00-00',
+        version_label: null,
+        teams_in_filter: ['Gorlocks'],
+        opportunities_date_range: null,
+        points_date_range: null,
+      },
       full_contact_id: 'C100',
       contact_full_name_raw: 'Test Vol',
       opportunity_name: 'Old Sponsor',
       amount_dollars: 1000,
       type: 'Sponsorship',
+      routing_metrics: ['total_fundraising', 'total_points'],
     };
     const newRec: CreditDollarsRecord = {
       ...oldRec,
@@ -147,6 +157,12 @@ describe('Codex P1 — superseding credit-export batches per team', () => {
       source_row_hash: 'newhash',
       source_file_fingerprint: 'newfp',
       source_file_timestamp: '2026-05-21-10-00-00',
+      file_metadata: {
+        ...oldRec.file_metadata,
+        source_file: 'Gorlocks-2026-05-21-10-00-00.xlsx',
+        source_file_fingerprint: 'newfp',
+        source_file_timestamp: '2026-05-21-10-00-00',
+      },
       opportunity_name: 'New Sponsor',
       amount_dollars: 500,
     };
@@ -292,17 +308,32 @@ describe('Codex 2026-05-22 F4 — Same-timestamp credit-batch tie detection', ()
       source_file_fingerprint: 'fpA',
       source_file_timestamp: tsShared,
       team_mascot_from_filename: 'Gorlocks',
+      file_metadata: {
+        source_file: 'Gorlocks-2026-05-21-10-00-00.xlsx',
+        source_file_fingerprint: 'fpA',
+        source_file_timestamp: tsShared,
+        version_label: null,
+        teams_in_filter: ['Gorlocks'],
+        opportunities_date_range: null,
+        points_date_range: null,
+      },
       full_contact_id: 'C100',
       contact_full_name_raw: 'Test Vol',
       opportunity_name: 'Sponsor A',
       amount_dollars: 1000,
       type: 'Sponsorship',
+      routing_metrics: ['total_fundraising', 'total_points'],
     };
     const b: CreditDollarsRecord = {
       ...a,
       source_file: 'Gorlocks-amended-2026-05-21-10-00-00.xlsx',
       source_row_hash: 'b1',
       source_file_fingerprint: 'fpB',
+      file_metadata: {
+        ...a.file_metadata,
+        source_file: 'Gorlocks-amended-2026-05-21-10-00-00.xlsx',
+        source_file_fingerprint: 'fpB',
+      },
       opportunity_name: 'Sponsor B',
       amount_dollars: 500,
     };

@@ -57,10 +57,13 @@ console.log(`  Item buckets: ${JSON.stringify(itemBuckets)}`);
 
 console.log('\n=== Volunteer Credit Export (expected to hard-fail) ===');
 try {
-  const creditRecords = parseVolunteerCredit({
+  const { records: creditRecords } = parseVolunteerCredit({
     creditPath: CREDIT,
     roster,
-    cashRoutingAllowlist: [{ type: 'Cash', opportunity_name_pattern: 'AI Help', routing: 'dollars' }],
+    cashRoutingAllowlist: [
+      { type: 'Cash', opportunity_name_pattern: 'AI Help', routing: 'dollars',
+        routing_metrics: ['total_fundraising', 'total_points'] },
+    ],
     errors,
   });
   console.log(`  ⚠ unexpectedly succeeded; ${creditRecords.length} records`);
